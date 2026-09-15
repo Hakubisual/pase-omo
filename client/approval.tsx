@@ -135,7 +135,9 @@ function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: numbe
     input: {
       width: "100%",
       maxWidth: "100%",
-      minHeight: 96,
+      // Shorter on a phone: every point this box takes is a point the send
+      // button has to find below it.
+      minHeight: compact ? 72 : 96,
       paddingHorizontal: 12,
       paddingVertical: 10,
       borderWidth: 1,
@@ -148,7 +150,12 @@ function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: numbe
     actions: {
       width: "100%",
       maxWidth: "100%",
-      flexDirection: compact ? "column" : "row",
+      // Stacked on a phone, and reversed so the primary action is the one on
+      // top. A row reads deny-then-allow left to right, but a column puts the
+      // last child furthest down the screen - which is how the send button for
+      // a typed answer ended up below the bottom edge, leaving a request that
+      // could only be skipped.
+      flexDirection: compact ? "column-reverse" : "row",
       alignItems: "stretch",
       justifyContent: "flex-end",
       gap: 8,
