@@ -205,6 +205,9 @@ Go look at what he builds.
 And thanks to the [Paseo](https://getpaseo.com) team for a plugin API open enough
 that an agent can bring its whole interface with it.
 
+This repository was written with [OmO](https://github.com/code-yeongyu/oh-my-openagent),
+which is why OmO appears in the commit history as a co-author of its own plugin.
+
 ---
 
 ## License
