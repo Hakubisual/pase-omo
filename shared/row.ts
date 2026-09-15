@@ -104,6 +104,11 @@ const LIVE_RUN_STATUSES: ReadonlySet<string> = new Set([
   "paused",
 ]);
 
+/** A run that has stopped moving on its own, whatever it stopped as. */
+export function isSettledRun(status: string): boolean {
+  return !LIVE_RUN_STATUSES.has(status);
+}
+
 /**
  * The single run the chat draws.
  *
