@@ -137,7 +137,7 @@ it("reports a session that could not be stopped and does not resume it", async (
 
   expect(log).toEqual(["suspend:b", "resume:b"]);
   expect(job.resumed).toBe(1);
-  expect(job.failures).toEqual(["a: could not be stopped — stuck"]);
+  expect(job.failures).toEqual(["a: 정지 실패 — stuck"]);
   expect(job.phase).toBe("failed");
 });
 
@@ -152,7 +152,7 @@ it("reports a session that never came back", async () => {
   });
 
   expect(job.resumed).toBe(0);
-  expect(job.failures).toEqual(["a: could not be resumed — no runtime"]);
+  expect(job.failures).toEqual(["a: 재개 실패 — no runtime"]);
 });
 
 it("returns while the install is still running instead of waiting for it", async () => {

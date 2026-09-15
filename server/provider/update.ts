@@ -226,7 +226,7 @@ export async function runOmoUpdateJob(
       suspended.push(session);
       job.suspended += 1;
     } catch (error) {
-      job.failures.push(`${session.sessionId}: could not be stopped — ${describe(error)}`);
+      job.failures.push(`${session.sessionId}: 정지 실패 — ${describe(error)}`);
     }
   }
 
@@ -245,7 +245,7 @@ export async function runOmoUpdateJob(
       await session.resume();
       job.resumed += 1;
     } catch (error) {
-      job.failures.push(`${session.sessionId}: could not be resumed — ${describe(error)}`);
+      job.failures.push(`${session.sessionId}: 재개 실패 — ${describe(error)}`);
     }
   }
 
@@ -290,7 +290,7 @@ export async function applyOmoUpdate(
   runningJob = runOmoUpdateJob(input, job, deps).catch((error: unknown) => {
     // A throw here is a defect rather than a session failure, but the button
     // still has to stop saying "working".
-    job.failures.push(`update job failed — ${describe(error)}`);
+    job.failures.push(`업데이트 작업 실패 — ${describe(error)}`);
     job.phase = "failed";
     job.finishedAt = new Date().toISOString();
   });

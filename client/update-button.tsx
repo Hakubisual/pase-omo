@@ -33,20 +33,20 @@ const JOB_REFRESH_MS = 1500;
 const STATUS_QUERY_KEY = ["omo-update", "status"] as const;
 
 export function updateButtonLabel(status: OmoUpdateStatusPayload | undefined): string | undefined {
-  return status?.updateAvailable ? "Update" : undefined;
+  return status?.updateAvailable ? "업데이트" : undefined;
 }
 
 /** One line naming what the button would do, given what the check found. */
 export function updateSummary(status: OmoUpdateStatusPayload | undefined): string {
-  if (!status) return "Checking the OmO version…";
+  if (!status) return "OmO 버전을 확인하는 중…";
   if (status.updateAvailable) {
-    return `${status.availableVersion} is available (installed ${status.installedVersion})`;
+    return `새 버전 ${status.availableVersion} (설치됨 ${status.installedVersion})`;
   }
-  if (status.installedVersion === null) return "The installed OmO version could not be read.";
+  if (status.installedVersion === null) return "설치된 OmO 버전을 읽지 못했다.";
   if (status.availableVersion === null) {
-    return `Installed ${status.installedVersion} · could not reach the registry`;
+    return `설치됨 ${status.installedVersion} · 최신 버전 확인 실패`;
   }
-  return `Up to date (${status.installedVersion})`;
+  return `최신 버전 (${status.installedVersion})`;
 }
 
 export function isUpdateJobRunning(job: OmoUpdateJob | null | undefined): boolean {
@@ -62,14 +62,14 @@ export function isUpdateJobRunning(job: OmoUpdateJob | null | undefined): boolea
  */
 export function jobText(job: OmoUpdateJob | null | undefined): string {
   if (!job) return "";
-  if (job.phase === "suspending") return `Stopping ${job.total || ""} sessions…`.replace("  ", " ");
-  if (job.phase === "installing") return "Installing OmO…";
-  if (job.phase === "resuming") return `Resuming sessions (${job.resumed}/${job.suspended})…`;
+  if (job.phase === "suspending") return `세션 ${job.total || ""}개 정지 중…`.replace("  ", " ");
+  if (job.phase === "installing") return "OmO 설치 중…";
+  if (job.phase === "resuming") return `세션 재개 중 (${job.resumed}/${job.suspended})…`;
 
   const parts: string[] = [];
-  if (job.installError) parts.push(`Update failed: ${job.installError}`);
-  else if (job.install) parts.push(`Updated${job.version ? ` to ${job.version}` : ""}`);
-  parts.push(`${job.resumed} session${job.resumed === 1 ? "" : "s"} resumed`);
+  if (job.installError) parts.push(`업데이트 실패: ${job.installError}`);
+  else if (job.install) parts.push(`업데이트 완료${job.version ? ` (${job.version})` : ""}`);
+  parts.push(`세션 ${job.resumed}개 재개`);
   if (job.failures.length > 0) parts.push(job.failures.join(" / "));
   return parts.join(" · ");
 }
@@ -153,8 +153,8 @@ function OmoUpdateBody(props: {
     data === undefined
       ? ""
       : data.liveSessions === 0
-        ? "No OmO session is open right now."
-        : `${data.liveSessions} OmO session${data.liveSessions === 1 ? "" : "s"} will be stopped and started again on the same conversation.`;
+        ? "지금 열려 있는 OmO 세션이 없다."
+        : `OmO 세션 ${data.liveSessions}개를 정지했다가 같은 대화로 다시 시작한다.`;
 
   const handleUpdate = useCallback(() => apply.mutate(true), [apply]);
   const handleRestart = useCallback(() => apply.mutate(false), [apply]);
@@ -162,7 +162,7 @@ function OmoUpdateBody(props: {
 
   return (
     <ScrollView style={{ maxHeight: styles.screen.maxHeight }} contentContainerStyle={styles.screen}>
-      <Text style={styles.title}>OmO update</Text>
+      <Text style={styles.title}>OmO 업데이트</Text>
       <Text style={styles.body}>{updateSummary(data)}</Text>
       {sessionLine ? <Text style={styles.body}>{sessionLine}</Text> : null}
       {data?.error ? <Text style={styles.error}>{data.error}</Text> : null}
@@ -170,23 +170,23 @@ function OmoUpdateBody(props: {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Update OmO and restart every session"
+          accessibilityLabel="업데이트하고 모든 세션 재시작"
           disabled={running}
           style={[styles.button, running && styles.disabled]}
           onPress={handleUpdate}
         >
           <Text style={styles.primaryText}>
-            {running ? "Working…" : "Update, then restart every session"}
+            {running ? "진행 중…" : "업데이트 후 전체 세션 재시작"}
           </Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Restart every session"
+          accessibilityLabel="모든 세션 재시작"
           disabled={running}
           style={[styles.button, styles.secondary, running && styles.disabled]}
           onPress={handleRestart}
         >
-          <Text style={styles.secondaryText}>Restart sessions only</Text>
+          <Text style={styles.secondaryText}>전체 세션 재시작만</Text>
         </Pressable>
       </View>
 
@@ -198,11 +198,11 @@ function OmoUpdateBody(props: {
       {job && !running && close ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel="닫기"
           style={[styles.button, styles.secondary]}
           onPress={handleClose}
         >
-          <Text style={styles.secondaryText}>Close</Text>
+          <Text style={styles.secondaryText}>닫기</Text>
         </Pressable>
       ) : null}
     </ScrollView>
