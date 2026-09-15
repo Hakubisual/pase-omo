@@ -17,7 +17,7 @@ import { POPOVER_BOTTOM_INSET, popoverMaxHeight } from "./popover-layout.js";
 import {
   applyOmoUpdateRpc,
   omoUpdateStatusRpc,
-  type ApplyOmoUpdatePayload,
+  type OmoUpdateJob,
   type OmoUpdateStatusPayload,
 } from "../shared/update.js";
 
@@ -27,30 +27,50 @@ import {
  */
 const STATUS_REFRESH_MS = 15 * 60 * 1000;
 
+/** While a job is running the same query is the progress feed. */
+const JOB_REFRESH_MS = 1500;
+
 const STATUS_QUERY_KEY = ["omo-update", "status"] as const;
 
 export function updateButtonLabel(status: OmoUpdateStatusPayload | undefined): string | undefined {
-  return status?.updateAvailable ? "업데이트" : undefined;
+  return status?.updateAvailable ? "Update" : undefined;
 }
 
 /** One line naming what the button would do, given what the check found. */
 export function updateSummary(status: OmoUpdateStatusPayload | undefined): string {
-  if (!status) return "OmO 버전을 확인하는 중…";
+  if (!status) return "Checking the OmO version…";
   if (status.updateAvailable) {
-    return `새 버전 ${status.availableVersion} (설치됨 ${status.installedVersion})`;
+    return `${status.availableVersion} is available (installed ${status.installedVersion})`;
   }
-  if (status.installedVersion === null) return "설치된 OmO 버전을 읽지 못했다.";
-  if (status.availableVersion === null) return `설치됨 ${status.installedVersion} · 최신 버전 확인 실패`;
-  return `최신 버전 ${status.installedVersion}`;
+  if (status.installedVersion === null) return "The installed OmO version could not be read.";
+  if (status.availableVersion === null) {
+    return `Installed ${status.installedVersion} · could not reach the registry`;
+  }
+  return `Up to date (${status.installedVersion})`;
 }
 
-/** What the run reports back, in one line, so a partial failure is never silent. */
-export function applyResultText(result: ApplyOmoUpdatePayload): string {
+export function isUpdateJobRunning(job: OmoUpdateJob | null | undefined): boolean {
+  return job !== null && job !== undefined && job.phase !== "done" && job.phase !== "failed";
+}
+
+/**
+ * What the job says about itself, in one line.
+ *
+ * The apply RPC returns as soon as the work starts - the daemon kills a plugin
+ * call at 30 seconds and a global install takes longer - so this line, fed by
+ * the status poll, is the only place the run reports progress and its outcome.
+ */
+export function jobText(job: OmoUpdateJob | null | undefined): string {
+  if (!job) return "";
+  if (job.phase === "suspending") return `Stopping ${job.total || ""} sessions…`.replace("  ", " ");
+  if (job.phase === "installing") return "Installing OmO…";
+  if (job.phase === "resuming") return `Resuming sessions (${job.resumed}/${job.suspended})…`;
+
   const parts: string[] = [];
-  if (result.installError) parts.push(`업데이트 실패: ${result.installError}`);
-  else if (result.installed) parts.push(`업데이트 완료${result.version ? ` (${result.version})` : ""}`);
-  parts.push(`세션 ${result.resumed}개 재개`);
-  if (result.failures.length > 0) parts.push(result.failures.join(" / "));
+  if (job.installError) parts.push(`Update failed: ${job.installError}`);
+  else if (job.install) parts.push(`Updated${job.version ? ` to ${job.version}` : ""}`);
+  parts.push(`${job.resumed} session${job.resumed === 1 ? "" : "s"} resumed`);
+  if (job.failures.length > 0) parts.push(job.failures.join(" / "));
   return parts.join(" · ");
 }
 
@@ -113,7 +133,10 @@ function OmoUpdateBody(props: {
   const status = useQuery({
     queryKey: STATUS_QUERY_KEY,
     queryFn: () => fetchStatus({}),
-    refetchInterval: STATUS_REFRESH_MS,
+    // Fast while a job is moving, idle otherwise: the same query doubles as the
+    // progress feed for a run the button no longer waits on.
+    refetchInterval: (query) =>
+      isUpdateJobRunning(query.state.data?.job) ? JOB_REFRESH_MS : STATUS_REFRESH_MS,
   });
 
   const apply = useMutation({
@@ -123,14 +146,15 @@ function OmoUpdateBody(props: {
     },
   });
 
-  const running = apply.isPending;
   const data = status.data;
+  const job = data?.job ?? null;
+  const running = apply.isPending || isUpdateJobRunning(job);
   const sessionLine =
     data === undefined
       ? ""
       : data.liveSessions === 0
-        ? "지금 열려 있는 OmO 세션이 없다."
-        : `OmO 세션 ${data.liveSessions}개를 정지했다가 같은 대화로 다시 시작한다.`;
+        ? "No OmO session is open right now."
+        : `${data.liveSessions} OmO session${data.liveSessions === 1 ? "" : "s"} will be stopped and started again on the same conversation.`;
 
   const handleUpdate = useCallback(() => apply.mutate(true), [apply]);
   const handleRestart = useCallback(() => apply.mutate(false), [apply]);
@@ -138,7 +162,7 @@ function OmoUpdateBody(props: {
 
   return (
     <ScrollView style={{ maxHeight: styles.screen.maxHeight }} contentContainerStyle={styles.screen}>
-      <Text style={styles.title}>OmO 업데이트</Text>
+      <Text style={styles.title}>OmO update</Text>
       <Text style={styles.body}>{updateSummary(data)}</Text>
       {sessionLine ? <Text style={styles.body}>{sessionLine}</Text> : null}
       {data?.error ? <Text style={styles.error}>{data.error}</Text> : null}
@@ -146,39 +170,39 @@ function OmoUpdateBody(props: {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="업데이트하고 모든 세션 재시작"
+          accessibilityLabel="Update OmO and restart every session"
           disabled={running}
           style={[styles.button, running && styles.disabled]}
           onPress={handleUpdate}
         >
           <Text style={styles.primaryText}>
-            {running ? "진행 중…" : "업데이트 후 전체 세션 재시작"}
+            {running ? "Working…" : "Update, then restart every session"}
           </Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="모든 세션 재시작"
+          accessibilityLabel="Restart every session"
           disabled={running}
           style={[styles.button, styles.secondary, running && styles.disabled]}
           onPress={handleRestart}
         >
-          <Text style={styles.secondaryText}>전체 세션 재시작만</Text>
+          <Text style={styles.secondaryText}>Restart sessions only</Text>
         </Pressable>
       </View>
 
       <Text style={styles.command}>{data?.installCommand ?? ""}</Text>
 
-      {apply.data ? <Text style={styles.result}>{applyResultText(apply.data)}</Text> : null}
+      {job ? <Text style={styles.result}>{jobText(job)}</Text> : null}
       {apply.error ? <Text style={styles.error}>{String(apply.error)}</Text> : null}
 
-      {apply.data && close ? (
+      {job && !running && close ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="닫기"
+          accessibilityLabel="Close"
           style={[styles.button, styles.secondary]}
           onPress={handleClose}
         >
-          <Text style={styles.secondaryText}>닫기</Text>
+          <Text style={styles.secondaryText}>Close</Text>
         </Pressable>
       ) : null}
     </ScrollView>
