@@ -283,7 +283,7 @@ export function contributeUpdateButton(client: PluginClientContext): () => void 
             id: "omo-update",
             workspaceId: workspace.id,
             button: {
-              title: "OmO 업데이트",
+              title: "OmO update",
               icon: "RefreshCw",
               behavior: { kind: "popover", Content: OmoUpdatePopover },
             },
