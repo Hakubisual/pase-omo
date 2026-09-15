@@ -34,6 +34,7 @@ const model = (provider: string, id: string) => ({ provider, id, name: `${provid
 
 let agentDir: string;
 let previousAgentDir: string | undefined;
+let previousCommand: string | undefined;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -42,11 +43,19 @@ beforeEach(async () => {
   agentDir = await mkdtemp(join(tmpdir(), "omo-catalog-"));
   previousAgentDir = process.env.OMO_CODING_AGENT_DIR;
   process.env.OMO_CODING_AGENT_DIR = agentDir;
+  // OmoProcess is mocked above, so the CLI is never spawned; the launch only has
+  // to resolve. Pinning it keeps the fingerprint under test the model config's
+  // rather than whichever omo happens to be installed on the host, which is what
+  // made these cases pass on a developer machine and fail on a clean checkout.
+  previousCommand = process.env.PASEO_OMO_COMMAND;
+  process.env.PASEO_OMO_COMMAND = JSON.stringify([join(agentDir, "omo-stub")]);
 });
 
 afterEach(() => {
   if (previousAgentDir === undefined) delete process.env.OMO_CODING_AGENT_DIR;
   else process.env.OMO_CODING_AGENT_DIR = previousAgentDir;
+  if (previousCommand === undefined) delete process.env.PASEO_OMO_COMMAND;
+  else process.env.PASEO_OMO_COMMAND = previousCommand;
 });
 
 /** Touch OmO's model config so the fingerprint moves. */

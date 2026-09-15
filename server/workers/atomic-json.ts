@@ -12,8 +12,11 @@ export async function atomicWriteJson(file: string, value: unknown): Promise<voi
         await fs.rename(temporary, file);
         break;
       } catch (error) {
-        // Windows readers may briefly deny replacing an otherwise writable file.
-        if (process.platform !== "win32" || !(error instanceof Error) ||
+        // A concurrent reader can briefly deny replacing an otherwise writable
+        // file. Windows raises this as a sharing violation, and networked or
+        // mounted POSIX filesystems report the same codes, so the retry is not
+        // gated on the platform.
+        if (!(error instanceof Error) ||
             !("code" in error) || !["EPERM", "EACCES", "EBUSY"].includes(String(error.code)) ||
             attempt === 5) throw error;
         await new Promise(resolve => setTimeout(resolve, 10 * 2 ** attempt));
