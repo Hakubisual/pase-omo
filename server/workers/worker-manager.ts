@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import type { PaseoApi, PaseoTerminal, PaseoTerminalActions, PaseoTerminalCreateOptions } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { findDependentWorkerIds, findReadyWorkers, validateBatch } from "./dag.js";
 import { WorkerLifecycleWatcher, type WorkerStatusPayload } from "./worker-lifecycle.js";
 import { WorkerStore } from "./worker-store.js";
@@ -10,6 +10,19 @@ import { WorkerError, type WorkerCancelInput, type WorkerCancelPayload, type Wor
   type WorkerListInput, type WorkerListPayload, type WorkerRecord } from "../../shared/workers.js";
 import { createWorkerWorktree, ensureGitRepository, resolveWorktreePath, sanitizeBranchName } from "./worktree.js";
 import { resolveOmoLaunch } from "../provider/omo-cli.js";
+
+/**
+ * Paseo's terminal surface.
+ *
+ * The plugin build rejects a server-side import of `@getpaseo/client`, type-only
+ * ones included, and consumers never install that package. Deriving these from
+ * the server SDK's handler context keeps the host's real types without naming
+ * the client entry, so they cannot drift from what Paseo actually passes in.
+ */
+type PaseoApi = PluginHandlerContext["paseo"];
+type PaseoTerminalActions = PaseoApi["terminals"];
+type PaseoTerminalCreateOptions = Parameters<PaseoTerminalActions["create"]>[0];
+type PaseoTerminal = Awaited<ReturnType<PaseoTerminalActions["list"]>>["entries"][number];
 
 export type TerminalSnapshot = PaseoTerminal;
 export type TerminalCreateOptions = PaseoTerminalCreateOptions;
