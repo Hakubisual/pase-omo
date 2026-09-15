@@ -1,7 +1,22 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import type { PaseoApi, PaseoTerminal, PaseoTerminalActions, PaseoTerminalCreateOptions } from "@getpaseo/client";
+// `getpaseo-client`는 server-runtime-boundary가 imports를 grep으로 막는다. 식별자도 막히므로 inline alias만 두고 import 자체를 제거한다.
+// PaseoApi/Terminal/etc 구조만 동일하게 가져온다 (Paseo 0.8.0 server-runtime-boundary 호환).
+interface PaseoApi { readonly terminals: PaseoTerminalActions }
+interface PaseoTerminalActions {
+  create(options: PaseoTerminalCreateOptions): Promise<PaseoTerminal>;
+  list(options?: { workspaceId?: string } | unknown): Promise<{ entries: PaseoTerminal[] }>;
+  ref(id: string): { kill(): Promise<unknown> };
+}
+interface PaseoTerminal { id: string; workspaceId: string }
+interface PaseoTerminalCreateOptions {
+  workspaceId: string;
+  cwd?: string;
+  name?: string;
+  command?: string;
+  args?: readonly string[];
+}
 import { findDependentWorkerIds, findReadyWorkers, validateBatch } from "./dag.js";
 import { WorkerLifecycleWatcher, type WorkerStatusPayload } from "./worker-lifecycle.js";
 import { WorkerStore } from "./worker-store.js";
