@@ -7,6 +7,7 @@ import { getSnapshot, listSessions } from "./server/dag/dag.js";
 import { listProjects } from "./server/dag/projects.js";
 import { registerApprovalHandlers } from "./server/provider/approval.js";
 import { createOmoProvider } from "./server/provider/provider.js";
+import { registerUpdateHandlers } from "./server/provider/update.js";
 import { registerWorkerHandlers } from "./server/workers/workers.js";
 import { getSnapshotRpc, listProjectsRpc, listSessionsRpc } from "./shared/dag.js";
 import { activeRunsRpc, agentDagSnapshotRpc } from "./shared/row.js";
@@ -60,6 +61,11 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // provider rather than inside it.
   const releaseApprovals = registerApprovalHandlers(server);
 
+  // Update lives next to the provider for the same reason: suspending and
+  // resuming sessions reaches the live OmoSession objects through the registry
+  // they join on construction.
+  const releaseUpdate = registerUpdateHandlers(server);
+
   // The worker RPCs come with the only disposal path for the lazily created
   // WorkerManager, so the entry registers them through their own owner and
   // releases that handle below instead of wiring the four handlers by hand.
@@ -76,6 +82,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     offTurnStarted();
     offTurnEnded();
     releaseApprovals();
+    releaseUpdate();
     publisher.dispose();
     await releaseWorkers();
     releaseIpcObserver();

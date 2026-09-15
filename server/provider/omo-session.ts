@@ -9,7 +9,7 @@ import type {
   ProviderTimelineItem,
 } from "@getpaseo/plugin/server/provider";
 import type { ApprovalResponse, PendingApprovalRequest } from "../../shared/approval.js";
-import { approvalSessionRegistry } from "./approval.js";
+import { omoSessionRegistry } from "./session-registry.js";
 import type { OmoLaunch } from "./omo-cli.js";
 import { type OmoEvent, OmoProcess } from "./omo-process.js";
 import { todoItems, toolCallDetail, toolResultText } from "./tool-detail.js";
@@ -18,6 +18,23 @@ import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-pub
 type Json = Record<string, unknown>;
 
 const STREAM_FLUSH_MS = 60;
+
+/**
+ * How long a suspend waits for the old child to exit before moving on. `stop()`
+ * closes stdin and kills after its own backstop, so this only bounds the case
+ * where the process is already unreachable.
+ */
+const PROCESS_EXIT_GRACE_MS = 5_000;
+
+function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void promise.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 /** Thinking levels OmO understands, ordered from cheapest to most expensive. */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -144,7 +161,7 @@ export interface OmoSessionOptions {
  * the whole item, throttled while streaming and flushed on every boundary.
  */
 export class OmoSession {
-  readonly proc: OmoProcess;
+  proc: OmoProcess;
   private readonly options: OmoSessionOptions;
   private config: ProviderSessionConfig;
   private models: ProviderModel[] = [];
@@ -162,15 +179,29 @@ export class OmoSession {
   private lastTodoSignature: string | undefined;
   /** Latest list seen this turn, drawn once when the turn ends. */
   private pendingTodoItems: TodoPublishItem[] | undefined;
-  private readonly unregisterApprovalSession: () => void;
+  private readonly unregisterSession: () => void;
   private closed = false;
+  /** True between `suspend()` and `resume()`, when no child process exists. */
+  private suspended = false;
 
   constructor(options: OmoSessionOptions) {
     this.options = options;
     this.config = options.config;
-    this.proc = new OmoProcess({
+    this.proc = this.createProcess(options.sessionFile);
+    this.unregisterSession = omoSessionRegistry.add(this);
+  }
+
+  /**
+   * A child speaking for this session, resuming `sessionFile` when one is known.
+   *
+   * Built here rather than inline in the constructor because `resume()` needs an
+   * identical child around the session file the previous one was writing.
+   */
+  private createProcess(sessionFile: string | undefined): OmoProcess {
+    const { options } = this;
+    return new OmoProcess({
       launch: options.launch,
-      args: this.spawnArgs(),
+      args: this.spawnArgs(sessionFile),
       cwd: options.config.cwd,
       env: {
         ...(process.env as Record<string, string>),
@@ -182,13 +213,14 @@ export class OmoSession {
       },
       onEvent: (event) => this.handleEvent(event),
       onExit: ({ code, stderr }) => {
-        if (this.closed) return;
+        // A suspended session asked for this exit; reporting it would surface
+        // the pause as a crash and mark the agent failed in Paseo.
+        if (this.closed || this.suspended) return;
         const detail = stderr.trim().split("\n").slice(-4).join("\n");
         options.onRuntimeFailure(`OmO exited with code ${code ?? "null"}${detail ? `: ${detail}` : ""}`);
       },
       log: options.log,
     });
-    this.unregisterApprovalSession = approvalSessionRegistry.add(this);
   }
 
   get sessionId(): string {
@@ -219,9 +251,9 @@ export class OmoSession {
     }));
   }
 
-  private spawnArgs(): string[] {
+  private spawnArgs(sessionFile: string | undefined): string[] {
     const args = ["--mode", "rpc"];
-    if (this.options.sessionFile) args.push("--session", this.options.sessionFile);
+    if (sessionFile) args.push("--session", sessionFile);
     const model = this.config.model ? decodeModelId(this.config.model) : undefined;
     if (model) args.push("--provider", model.provider, "--model", model.modelId);
     if (this.config.thinkingOption) args.push("--thinking", this.config.thinkingOption);
@@ -412,6 +444,69 @@ export class OmoSession {
     await this.proc.call("abort", {}, 30_000);
   }
 
+  /** True while this session has no child process, i.e. between suspend and resume. */
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  /**
+   * Stop this session's OmO child and wait for it to let go of the session file.
+   *
+   * Everything the dead child was going to answer is settled first: an active
+   * turn is aborted and reported canceled, and pending confirm/select/question
+   * requests are resolved, because the process that would have received those
+   * answers is about to be gone.
+   *
+   * Idempotent, so a caller suspending every session does not have to know which
+   * ones it already stopped.
+   */
+  async suspend(): Promise<void> {
+    if (this.closed || this.suspended) return;
+    this.suspended = true;
+
+    if (this.activeTurnId) {
+      try {
+        await this.interrupt();
+      } catch (error) {
+        this.options.log(`abort before suspend failed: ${describe(error)}`);
+      }
+    }
+
+    this.flushAll();
+
+    for (const permissionId of [...this.pendingUi.keys()]) {
+      this.pendingUi.delete(permissionId);
+      this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId });
+    }
+
+    const turnId = this.activeTurnId;
+    if (turnId) {
+      this.activeTurnId = null;
+      this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: "canceled" });
+    }
+
+    this.proc.stop();
+    await withTimeout(this.proc.whenExited, PROCESS_EXIT_GRACE_MS);
+  }
+
+  /**
+   * Start a fresh child on the same session file and republish the session's
+   * state, so the conversation continues where the suspended one stopped.
+   */
+  async resume(): Promise<void> {
+    if (this.closed || !this.suspended) return;
+    const sessionFile = this.durableSessionFile;
+    this.proc = this.createProcess(sessionFile);
+    this.suspended = false;
+    this.proc.start();
+    this.state = await this.proc.call<OmoStateRecord>("get_state", {}, 240_000);
+    await this.refreshCatalog();
+    this.emit({ type: "session.config", sessionId: this.sessionId, config: this.configState() });
+    this.publishCommands();
+    const persistence = this.persistence();
+    if (persistence) this.emit({ type: "session.persistence", sessionId: this.sessionId, persistence });
+  }
+
   async configure(changes: {
     model?: string | null;
     mode?: string | null;
@@ -505,7 +600,7 @@ export class OmoSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.unregisterApprovalSession();
+    this.unregisterSession();
     for (const timer of this.flushTimers.values()) clearTimeout(timer);
     this.flushTimers.clear();
     this.proc.stop();
