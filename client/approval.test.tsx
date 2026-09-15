@@ -118,8 +118,8 @@ describe("ApprovalRequestModal", () => {
     const ui = harness(request({ id: "confirm-1", method: "confirm", title: "Deploy now?" }));
     const tree = ui.render();
 
-    await press(tree, "Approve");
-    await press(tree, "Approve");
+    await press(tree, "승인");
+    await press(tree, "승인");
 
     expect(ui.rpc).toHaveBeenCalledTimes(1);
     expect(ui.rpc).toHaveBeenCalledWith({
@@ -134,7 +134,7 @@ describe("ApprovalRequestModal", () => {
   it("submits deny exactly once", async () => {
     const ui = harness(request({ id: "confirm-2", method: "confirm", title: "Delete cache?" }));
 
-    await press(ui.render(), "Deny");
+    await press(ui.render(), "거부");
 
     expect(ui.rpc).toHaveBeenCalledTimes(1);
     expect(ui.rpc).toHaveBeenCalledWith({
@@ -157,7 +157,7 @@ describe("ApprovalRequestModal", () => {
       }),
     );
 
-    await press(ui.render(), "Choose Production");
+    await press(ui.render(), "Production 선택");
 
     expect(ui.rpc).toHaveBeenCalledTimes(1);
     expect(ui.rpc).toHaveBeenCalledWith({
@@ -178,8 +178,8 @@ describe("ApprovalRequestModal", () => {
       }),
     );
 
-    typeInto(ui.render(), "Answer input", "ap-northeast-2");
-    await press(ui.render(), "Send answer");
+    typeInto(ui.render(), "답변 입력", "ap-northeast-2");
+    await press(ui.render(), "답변 보내기");
 
     expect(ui.rpc).toHaveBeenCalledTimes(1);
     expect(ui.rpc).toHaveBeenCalledWith({
@@ -211,7 +211,7 @@ describe("ApprovalRequestModal", () => {
 
     expect(textElement(tree, "…/release-plan.md")).toBeDefined();
     expect(textElement(tree, "…/production")).toBeDefined();
-    expect(control(tree, "Choose …/production")).toBeDefined();
+    expect(control(tree, "…/production 선택")).toBeDefined();
     expect(descendants(tree).some((element) => element.props.children === windowsPath)).toBe(false);
     expect(descendants(tree).some((element) => element.props.children === posixPath)).toBe(false);
   });
@@ -237,8 +237,8 @@ describe("ApprovalRequestModal", () => {
     const compactActions = byTestId(render(true), "approval-actions");
     const order = descendants(compactActions.props.children)
       .map((element) => element.props.accessibilityLabel)
-      .filter((label): label is string => label === "Skip" || label === "Send answer");
-    expect(order).toEqual(["Skip", "Send answer"]);
+      .filter((label): label is string => label === "건너뛰기" || label === "답변 보내기");
+    expect(order).toEqual(["건너뛰기", "답변 보내기"]);
     expect(flattenStyle(compactActions.props.style).flexDirection).toBe("column-reverse");
 
     // A wide row still reads deny-then-allow from left to right.
@@ -285,14 +285,14 @@ describe("ApprovalRequestModal", () => {
       flexDirection: "column-reverse",
     });
 
-    for (const label of [title, firstOption, secondOption, "Cancel"]) {
+    for (const label of [title, firstOption, secondOption, "취소"]) {
       const element = textElement(tree, label);
       expect(element.props.ellipsizeMode).toBe("tail");
       expect(element.props.numberOfLines).toBeGreaterThanOrEqual(1);
       expect(flattenStyle(element.props.style)).toMatchObject({ maxWidth: "100%", flexShrink: 1 });
     }
 
-    for (const label of [`Choose ${firstOption}`, `Choose ${secondOption}`, "Deny"]) {
+    for (const label of [`${firstOption} 선택`, `${secondOption} 선택`, "거부"]) {
       const style = flattenStyle(control(tree, label).props.style);
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
       expect(style.width).toBe("100%");
