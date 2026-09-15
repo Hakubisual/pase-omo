@@ -43,9 +43,12 @@ describe("unified client contributions", () => {
     // be answered from inside the plugin.
     // The folder browser is its own workspace panel: DAG runs and the parallel
     // sessions under them are grouped into a tree the user can actually browse.
-    expect([...rec.panels].sort()).toEqual(["approvals", "dag", "folders"]);
+    // The update panel carries the "pause every session, update OmO, resume"
+    // controls the header button opens in a popover.
+    expect([...rec.panels].sort()).toEqual(["approvals", "dag", "folders", "update"]);
     expect(rec.sidebar).toEqual(["omo-dag"]);
     expect([...rec.commands].sort()).toEqual([
+      "omo-update",
       "open-approvals-panel",
       "open-dag-explorer",
       "open-dag-panel",
@@ -56,6 +59,19 @@ describe("unified client contributions", () => {
     // todo row and its transformer.
     expect([...rec.renderers].sort()).toEqual(["omo-dag-run@1", "omo-todo@1"]);
     expect(rec.transformers).toEqual(["omo-todo"]);
+  });
+
+  it("puts the update button in every workspace header", async () => {
+    const { ctx, rec } = recordingClient({ workspaces: [{ id: "wks-1" }, { id: "wks-2" }] });
+    const cleanup = contribute(ctx as never);
+    // The button loop lists workspaces asynchronously, like the composer pills.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(rec.headerButtons).toEqual(["omo-update", "omo-update"]);
+
+    cleanup();
+    expect([...rec.outstanding]).toEqual([]);
   });
 
   it("releases every registration it made when the entry is cleaned up", () => {
