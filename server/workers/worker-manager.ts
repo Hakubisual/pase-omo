@@ -1,22 +1,7 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-// `getpaseo-client`는 server-runtime-boundary가 imports를 grep으로 막는다. 식별자도 막히므로 inline alias만 두고 import 자체를 제거한다.
-// PaseoApi/Terminal/etc 구조만 동일하게 가져온다 (Paseo 0.8.0 server-runtime-boundary 호환).
-interface PaseoApi { readonly terminals: PaseoTerminalActions }
-interface PaseoTerminalActions {
-  create(options: PaseoTerminalCreateOptions): Promise<PaseoTerminal>;
-  list(options?: { workspaceId?: string } | unknown): Promise<{ entries: PaseoTerminal[] }>;
-  ref(id: string): { kill(): Promise<unknown> };
-}
-interface PaseoTerminal { id: string; workspaceId: string }
-interface PaseoTerminalCreateOptions {
-  workspaceId: string;
-  cwd?: string;
-  name?: string;
-  command?: string;
-  args?: readonly string[];
-}
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { findDependentWorkerIds, findReadyWorkers, validateBatch } from "./dag.js";
 import { WorkerLifecycleWatcher, type WorkerStatusPayload } from "./worker-lifecycle.js";
 import { WorkerStore } from "./worker-store.js";
@@ -25,6 +10,19 @@ import { WorkerError, type WorkerCancelInput, type WorkerCancelPayload, type Wor
   type WorkerListInput, type WorkerListPayload, type WorkerRecord } from "../../shared/workers.js";
 import { createWorkerWorktree, ensureGitRepository, resolveWorktreePath, sanitizeBranchName } from "./worktree.js";
 import { resolveOmoLaunch } from "../provider/omo-cli.js";
+
+/**
+ * Paseo's terminal surface.
+ *
+ * The plugin build rejects a server-side import of `@getpaseo/client`, type-only
+ * ones included, and consumers never install that package. Deriving these from
+ * the server SDK's handler context keeps the host's real types without naming
+ * the client entry, so they cannot drift from what Paseo actually passes in.
+ */
+type PaseoApi = PluginHandlerContext["paseo"];
+type PaseoTerminalActions = PaseoApi["terminals"];
+type PaseoTerminalCreateOptions = Parameters<PaseoTerminalActions["create"]>[0];
+type PaseoTerminal = Awaited<ReturnType<PaseoTerminalActions["list"]>>["entries"][number];
 
 export type TerminalSnapshot = PaseoTerminal;
 export type TerminalCreateOptions = PaseoTerminalCreateOptions;
