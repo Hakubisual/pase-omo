@@ -25,8 +25,9 @@ export type ClientRecording = {
 };
 
 export type AgentStub = { id: string; provider?: string | null; workspaceId?: string | null };
+export type WorkspaceStub = { id: string };
 
-export function recordingClient(options: { agents?: AgentStub[] } = {}) {
+export function recordingClient(options: { agents?: AgentStub[]; workspaces?: WorkspaceStub[] } = {}) {
   const rec: ClientRecording = {
     panels: [], sidebar: [], commands: [], surfaces: [], settings: [], slashCommands: [],
     pills: [], headerButtons: [], renderers: [], transformers: [], themes: [],
@@ -49,7 +50,9 @@ export function recordingClient(options: { agents?: AgentStub[] } = {}) {
     return { update: () => {}, remove };
   };
   const agents = options.agents ?? [];
+  const workspaces = options.workspaces ?? [];
   const listeners: ((u: unknown) => void)[] = [];
+  const workspaceListeners: ((u: unknown) => void)[] = [];
 
   const ctx = {
     addWorkspacePanel(c: { id: string; title: string }) { rec.panels.push(c.id); rec.titles.push(`panel:${c.title}`); return track(`panel:${c.id}`); },
@@ -75,6 +78,13 @@ export function recordingClient(options: { agents?: AgentStub[] } = {}) {
           listeners.push(listener);
           for (const agent of agents) listener({ kind: "upsert", agent });
           return () => { listeners.splice(listeners.indexOf(listener), 1); };
+        },
+      },
+      workspaces: {
+        list: async () => ({ entries: workspaces }),
+        subscribe(listener: (u: unknown) => void) {
+          workspaceListeners.push(listener);
+          return () => { workspaceListeners.splice(workspaceListeners.indexOf(listener), 1); };
         },
       },
     },
