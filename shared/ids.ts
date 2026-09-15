@@ -37,3 +37,12 @@ export const APPROVAL_PANEL_ID = "approvals";
  * Workspace tab that browses sessions, runs and their parallel agents as folders.
  */
 export const FOLDERS_PANEL_ID = "folders";
+
+/**
+ * Workspace tab carrying the OmO update / restart-all controls.
+ *
+ * The header button opens the same controls in a popover; the panel exists so
+ * the command center has somewhere to send a user, and so a phone can show the
+ * controls at full height.
+ */
+export const UPDATE_PANEL_ID = "update";

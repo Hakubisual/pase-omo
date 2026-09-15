@@ -52,6 +52,18 @@ export class OmoProcess {
     { resolve(value: OmoResponse): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
   >();
   private exited = false;
+  private resolveExit: (() => void) | undefined;
+  /**
+   * Settles once the child is gone (exit, spawn failure, or the kill backstop
+   * in `stop()`), so a caller that replaces this process can wait for the old
+   * one to release the session file before the new one opens it.
+   *
+   * A process that was never started settles only through `stop()`, so callers
+   * bound the wait rather than awaiting this alone.
+   */
+  readonly whenExited: Promise<void> = new Promise<void>((resolve) => {
+    this.resolveExit = resolve;
+  });
 
   constructor(private readonly options: OmoProcessOptions) {}
 
@@ -92,6 +104,7 @@ export class OmoProcess {
   private finish(code: number | null, signal: string | null): void {
     if (this.exited) return;
     this.exited = true;
+    this.resolveExit?.();
     this.options.onExit({ code, signal, stderr: this.stderrTail });
   }
 
@@ -181,7 +194,12 @@ export class OmoProcess {
    */
   stop(): void {
     const child = this.child;
-    if (!child || this.exited) return;
+    if (!child || this.exited) {
+      // Nothing to wait for: a process that never spawned would otherwise leave
+      // `whenExited` pending forever.
+      this.resolveExit?.();
+      return;
+    }
     try {
       child.stdin.end();
     } catch {

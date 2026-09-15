@@ -94,7 +94,8 @@ function fromGlobalInstall(searched: string[]): OmoLaunch | undefined {
   return undefined;
 }
 
-function fromPathNamed(name: string): string | undefined {
+/** First executable named `name` on PATH, resolved through PATHEXT on Windows. */
+export function fromPathNamed(name: string): string | undefined {
   const entries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   const names =
     process.platform === "win32"

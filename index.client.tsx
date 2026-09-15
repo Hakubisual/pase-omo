@@ -8,7 +8,14 @@ import { FoldersPanel } from "./client/folders-panel.js";
 import { DagGlobalSurface, DagPanel } from "./client/dag.js";
 import { DagRunRow } from "./client/dag-row.js";
 import { contributeTodoClient } from "./client/todo-card.js";
-import { APPROVAL_PANEL_ID, DAG_PANEL_ID, DAG_SURFACE_ID, FOLDERS_PANEL_ID } from "./shared/ids.js";
+import { contributeUpdateButton, OmoUpdatePanel } from "./client/update-button.js";
+import {
+  APPROVAL_PANEL_ID,
+  DAG_PANEL_ID,
+  DAG_SURFACE_ID,
+  FOLDERS_PANEL_ID,
+  UPDATE_PANEL_ID,
+} from "./shared/ids.js";
 import { DAG_ROW_KIND, DAG_ROW_VERSION, DagRowSchema } from "./shared/row.js";
 
 /**
@@ -55,6 +62,14 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
       locations: ["workspace", "explorer"],
       Component: FoldersPanel,
     }),
+    client.addWorkspacePanel({
+      id: UPDATE_PANEL_ID,
+      title: "OmO 업데이트",
+      icon: "RefreshCw",
+      context: "workspace",
+      locations: ["workspace", "explorer"],
+      Component: OmoUpdatePanel,
+    }),
     client.addSurface(DAG_SURFACE_ID, DagGlobalSurface),
     client.addSidebarItem({
       id: "omo-dag",
@@ -93,6 +108,16 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
       },
     }),
     client.addCommandCenterItem({
+      id: "omo-update",
+      title: "OmO 업데이트 / 전체 세션 재시작",
+      icon: "RefreshCw",
+      keywords: ["omo", "update", "restart", "업데이트", "재시작", "세션"],
+      context: "workspace",
+      onSelect({ openPanel }) {
+        openPanel(UPDATE_PANEL_ID, { location: "explorer" });
+      },
+    }),
+    client.addCommandCenterItem({
       id: "open-folders-panel",
       title: "Open OmO Folders",
       icon: "FolderTree",
@@ -109,6 +134,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
       Component: DagRunRow,
     }),
     contributeDagPill(client),
+    contributeUpdateButton(client),
     contributeApprovalPill(client),
     contributeTodoClient(client),
   );
