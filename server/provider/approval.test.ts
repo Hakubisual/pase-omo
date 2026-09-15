@@ -142,6 +142,16 @@ describe("approval RPC handlers", () => {
     });
   });
 
+  it("answers an agent with no live session with an empty list", async () => {
+    // The composer pill asks for every OmO agent the host lists, including ones
+    // whose session is closed. Throwing there filled the console with
+    // DaemonRpcErrors and froze the pill on its last label; having nothing
+    // pending is an answer.
+    await expect(
+      listPendingApprovals({ agentId: "agent-gone" }, context("agent-gone", "no-such-session")),
+    ).resolves.toEqual({ requests: [] });
+  });
+
   it("puts a free-text answer under the pending question key", async () => {
     const { process } = createSession();
     process.emit({

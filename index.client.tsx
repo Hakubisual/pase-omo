@@ -64,7 +64,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addWorkspacePanel({
       id: UPDATE_PANEL_ID,
-      title: "OmO 업데이트",
+      title: "OmO update",
       icon: "RefreshCw",
       context: "workspace",
       locations: ["workspace", "explorer"],
@@ -109,7 +109,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addCommandCenterItem({
       id: "omo-update",
-      title: "OmO 업데이트 / 전체 세션 재시작",
+      title: "OmO update / restart every session",
       icon: "RefreshCw",
       keywords: ["omo", "update", "restart", "업데이트", "재시작", "세션"],
       context: "workspace",
