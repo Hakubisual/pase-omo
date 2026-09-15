@@ -14,6 +14,7 @@ import {
   OMO_PACKAGE,
   type ApplyOmoUpdateInput,
   type ApplyOmoUpdatePayload,
+  type OmoUpdateJob,
   type OmoUpdateStatusPayload,
 } from "../../shared/update.js";
 import { fromPathNamed, resolveOmoLaunch } from "./omo-cli.js";
@@ -132,6 +133,40 @@ async function runInstall(): Promise<void> {
   });
 }
 
+/**
+ * The newest apply run. Module state on purpose: the button that starts a job
+ * and the status calls that follow it are separate RPCs, and the daemon holds
+ * one plugin instance for all of them.
+ */
+let currentJob: OmoUpdateJob | null = null;
+let runningJob: Promise<void> | null = null;
+
+/** The job a caller can see, or null before the first one. */
+export function omoUpdateJob(): OmoUpdateJob | null {
+  return currentJob === null ? null : { ...currentJob, failures: [...currentJob.failures] };
+}
+
+/** Settles when the running job finishes; immediate when nothing is running. */
+export async function awaitOmoUpdateJob(): Promise<void> {
+  await runningJob;
+}
+
+/** Test seam: forgets the last job so one test cannot see another's result. */
+export function resetOmoUpdateJob(): void {
+  currentJob = null;
+  runningJob = null;
+}
+
+const ACTIVE_PHASES: ReadonlySet<OmoUpdateJob["phase"]> = new Set([
+  "suspending",
+  "installing",
+  "resuming",
+]);
+
+export function isOmoUpdateJobRunning(job: OmoUpdateJob | null): boolean {
+  return job !== null && ACTIVE_PHASES.has(job.phase);
+}
+
 export async function omoUpdateStatus(
   _input: Record<string, never>,
   _context: unknown,
@@ -153,6 +188,7 @@ export async function omoUpdateStatus(
     liveSessions: registry.list().length,
     installCommand: installCommandLine(),
     error,
+    job: omoUpdateJob(),
   };
 }
 
@@ -172,53 +208,94 @@ export interface ApplyOmoUpdateDeps {
   readVersion?: () => Promise<string | null>;
 }
 
-export async function applyOmoUpdate(
+export async function runOmoUpdateJob(
   input: ApplyOmoUpdateInput,
-  _context: unknown,
+  job: OmoUpdateJob,
   deps: ApplyOmoUpdateDeps = {},
-): Promise<ApplyOmoUpdatePayload> {
+): Promise<void> {
   const registry = deps.registry ?? omoSessionRegistry;
   const install = deps.runInstall ?? runInstall;
   const readVersion = deps.readVersion ?? installedOmoVersion;
   const sessions = registry.list();
-  const failures: string[] = [];
+  job.total = sessions.length;
 
   const suspended = [];
   for (const session of sessions) {
     try {
       await session.suspend();
       suspended.push(session);
+      job.suspended += 1;
     } catch (error) {
-      failures.push(`${session.sessionId}: 정지 실패 — ${describe(error)}`);
+      job.failures.push(`${session.sessionId}: could not be stopped — ${describe(error)}`);
     }
   }
 
-  let installError: string | null = null;
   if (input.install) {
+    job.phase = "installing";
     try {
       await install();
     } catch (error) {
-      installError = describe(error);
+      job.installError = describe(error);
     }
   }
 
-  let resumed = 0;
+  job.phase = "resuming";
   for (const session of suspended) {
     try {
       await session.resume();
-      resumed += 1;
+      job.resumed += 1;
     } catch (error) {
-      failures.push(`${session.sessionId}: 재개 실패 — ${describe(error)}`);
+      job.failures.push(`${session.sessionId}: could not be resumed — ${describe(error)}`);
     }
   }
 
-  return {
-    installed: input.install && installError === null,
-    version: await readVersion(),
-    resumed,
-    failures,
-    installError,
+  try {
+    job.version = await readVersion();
+  } catch {
+    job.version = null;
+  }
+  job.phase = job.installError !== null || job.failures.length > 0 ? "failed" : "done";
+  job.finishedAt = new Date().toISOString();
+}
+
+/**
+ * Starts the job and returns at once.
+ *
+ * Waiting here is what produced `Plugin RPC timed out` on a working update: the
+ * daemon gives a plugin handler 30 seconds, and a global install alone can take
+ * longer than that. The button starts the work and watches `update.status`.
+ */
+export async function applyOmoUpdate(
+  input: ApplyOmoUpdateInput,
+  _context: unknown,
+  deps: ApplyOmoUpdateDeps = {},
+): Promise<ApplyOmoUpdatePayload> {
+  if (isOmoUpdateJobRunning(currentJob) && currentJob !== null) {
+    return { started: false, alreadyRunning: true, job: omoUpdateJob() as OmoUpdateJob };
+  }
+
+  const job: OmoUpdateJob = {
+    phase: "suspending",
+    install: input.install,
+    total: 0,
+    suspended: 0,
+    resumed: 0,
+    failures: [],
+    installError: null,
+    version: null,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
   };
+  currentJob = job;
+  runningJob = runOmoUpdateJob(input, job, deps).catch((error: unknown) => {
+    // A throw here is a defect rather than a session failure, but the button
+    // still has to stop saying "working".
+    job.failures.push(`update job failed — ${describe(error)}`);
+    job.phase = "failed";
+    job.finishedAt = new Date().toISOString();
+  });
+
+  return { started: true, alreadyRunning: false, job: omoUpdateJob() as OmoUpdateJob };
 }
 
 /** Entry-point wiring: registers both update RPC contracts. */
