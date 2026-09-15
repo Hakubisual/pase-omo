@@ -8,8 +8,11 @@ import {
   isHarnessTag,
   splitHarnessWraps,
   summarizeHarness,
+  toWrapRow,
   wrapPluginItems,
 } from "./wrap";
+
+const COMPACTION = "Context remains above the compaction threshold because compaction did not complete";
 
 const TASK = `<omo-senpi-task>
 Background task results are automatically delivered: an idle session is always woken, and a running turn receives them at its next tool boundary.
@@ -97,9 +100,60 @@ it("strips empty harness tags without drawing a bar", () => {
   });
 });
 
-it("does not wrap a timestamp or user_query host envelope as harness", () => {
-  const text = `<timestamp>Tuesday, Sep 15, 2026, 8:01 AM (UTC)</timestamp>
-<user_query>continue</user_query>`;
-  expect(splitHarnessWraps(text).wraps).toEqual([]);
-  expect(splitHarnessWraps(text).remaining).toBe(text);
+it("wraps a timestamp as a Time bar and unwraps user_query so the real prompt remains", () => {
+  const split = splitHarnessWraps(`<timestamp>Tuesday, Sep 15, 2026, 8:01 AM (UTC)</timestamp>
+<user_query>continue</user_query>`);
+  expect(split.wraps).toEqual([{ tag: "timestamp", body: "Tuesday, Sep 15, 2026, 8:01 AM (UTC)" }]);
+  expect(split.remaining).toBe("continue");
+  expect(badgeFor("timestamp")).toBe("Time");
+});
+
+it("unwraps user_query so a nested memory notice still becomes a Memory bar", () => {
+  const split = splitHarnessWraps(`<user_query>
+<memory_notice>
+- 145 previous messages between you and the user are stored in recall memory
+</memory_notice>
+</user_query>`);
+  expect(split.remaining).toBe("");
+  expect(split.wraps.map((wrap) => wrap.tag)).toEqual(["memory_notice"]);
+});
+
+it("wraps a System Error compaction line as an Error bar", () => {
+  const text = "[System Error] Context remains above the compaction threshold because compaction did not complete";
+  const split = splitHarnessWraps(text);
+  expect(split.remaining).toBe("");
+  expect(split.wraps).toEqual([
+    {
+      tag: "system-error",
+      body: "Context remains above the compaction threshold because compaction did not complete",
+    },
+  ]);
+  expect(toWrapRow(split.wraps[0]!)).toEqual({
+    tag: "system-error",
+    badge: "Error",
+    summary: "Context remains above the compaction threshold because compaction did not complete",
+  });
+});
+
+it("wraps a bare compaction-threshold sentence the same way", () => {
+  const split = splitHarnessWraps(COMPACTION);
+  expect(split.remaining).toBe("");
+  expect(split.wraps).toEqual([{ tag: "system-error", body: COMPACTION }]);
+});
+
+it("replaces a System Error timeline item with an Error wrap", () => {
+  const result = wrapPluginItems({
+    id: "err-1",
+    type: "error",
+    message: `[System Error] ${COMPACTION}`,
+  });
+  expect(result?.items).toEqual([
+    {
+      type: "plugin",
+      id: "err-1",
+      kind: WRAP_ROW_KIND,
+      version: WRAP_ROW_VERSION,
+      data: { tag: "system-error", badge: "Error", summary: COMPACTION },
+    },
+  ]);
 });

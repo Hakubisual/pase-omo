@@ -43,6 +43,11 @@ export function contributeWrapClient(client: PluginClientContext): PluginCleanup
       query: { itemType: "assistant_message" },
       transform: ({ item }) => wrapPluginItems(item),
     }),
+    client.addTimelineTransformer({
+      id: "omo-wrap-error",
+      query: { itemType: "error" },
+      transform: ({ item }) => wrapPluginItems(item),
+    }),
   ];
 
   return () => {

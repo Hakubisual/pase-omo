@@ -42,6 +42,36 @@ it("leaves ordinary assistant text alone", () => {
   ]);
 });
 
+it("publishes a System Error compaction line as an Error wrap, never a bubble", () => {
+  const text = "[System Error] Context remains above the compaction threshold because compaction did not complete";
+  const items = visibleTimelineItems("assistant", "a-err", text);
+  expect(items).toHaveLength(1);
+  expect(items[0]).toMatchObject({
+    type: "plugin",
+    id: "a-err",
+    pluginId: PLUGIN_ID,
+    kind: WRAP_ROW_KIND,
+    data: { badge: "Error", summary: "Context remains above the compaction threshold because compaction did not complete" },
+  });
+});
+
+it("wraps timestamp and memory, unwraps user_query, and keeps leftover user prose", () => {
+  const text = `[System Error] Context remains above the compaction threshold because compaction did not complete
+<timestamp>Tuesday, Sep 15, 2026, 2:36 PM (UTC)</timestamp>
+<user_query>
+<memory_notice>
+- 145 previous messages between you and the user are stored in recall memory
+</memory_notice>
+</user_query>`;
+  const items = visibleTimelineItems("user", "user-4", text, { clientMessageId: "c4" });
+  expect(items.map((item) => item.type)).toEqual(["plugin", "plugin", "plugin"]);
+  expect(items.map((item) => (item as { data?: { badge?: string } }).data?.badge)).toEqual([
+    "Error",
+    "Time",
+    "Memory",
+  ]);
+});
+
 it("publishes each harness bar then the leftover user prose, matching the injected prompt", () => {
   const text = `${TASK}
 
