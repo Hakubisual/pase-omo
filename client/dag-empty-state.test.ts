@@ -4,7 +4,7 @@ import { emptySessionsCopy, localPathLabel } from "./dag";
 
 /**
  * The global DAG surface opens with no project path chosen, so the "no sessions"
- * card used to render the literal text `경로 ""에 ...` — quoting a path the user
+ * card used to render the literal text `... recorded at ""` — quoting a path the user
  * never typed and reading like a bug. An unset path is a prompt, not a result.
  */
 
@@ -12,9 +12,9 @@ test("an unset project path asks for one instead of quoting an empty path", () =
   const copy = emptySessionsCopy("");
 
   expect(copy.description).not.toContain('""');
-  expect(copy.description).not.toContain("경로 \"\"");
+  expect(copy.description).not.toContain("at \"\"");
   // It has to say what to do next, not report an empty search.
-  expect(copy.title).not.toBe("발견된 OmO 세션이 없습니다");
+  expect(copy.title).not.toBe("No OmO sessions found");
   expect(copy.title.length).toBeGreaterThan(0);
   expect(copy.description.length).toBeGreaterThan(0);
 });
@@ -22,7 +22,7 @@ test("an unset project path asks for one instead of quoting an empty path", () =
 test("a path that really has no sessions uses a shortened daemon-local label", () => {
   const copy = emptySessionsCopy("E:/DEV/FREE");
 
-  expect(copy.title).toBe("발견된 OmO 세션이 없습니다");
+  expect(copy.title).toBe("No OmO sessions found");
   expect(copy.description).toContain("…/DEV/FREE");
   expect(copy.description).not.toContain("E:/DEV/FREE");
 });

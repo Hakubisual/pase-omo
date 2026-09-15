@@ -79,9 +79,9 @@ afterEach(() => {
 });
 
 it("labels the idle state, the single request and the queue", () => {
-  expect(approvalPillLabel(0)).toBe("승인");
-  expect(approvalPillLabel(1)).toBe("응답 필요");
-  expect(approvalPillLabel(3)).toBe("응답 필요 3");
+  expect(approvalPillLabel(0)).toBe("Approvals");
+  expect(approvalPillLabel(1)).toBe("Needs reply");
+  expect(approvalPillLabel(3)).toBe("Needs reply 3");
 });
 
 it("registers one pill per OmO agent and follows the pending count", async () => {
@@ -90,12 +90,12 @@ it("registers one pill per OmO agent and follows the pending count", async () =>
 
   // Registered for the OmO agent only, and visible before anything is pending.
   expect(rpcCalls).toBe(1);
-  expect(labels).toEqual(["승인", "승인"]);
+  expect(labels).toEqual(["Approvals", "Approvals"]);
 
   requests = [request("req-1")];
   notify();
   await vi.advanceTimersByTimeAsync(250);
-  expect(labels.at(-1)).toBe("응답 필요");
+  expect(labels.at(-1)).toBe("Needs reply");
 
   dispose();
   expect(removed).toBe(1);
@@ -107,12 +107,12 @@ it("keeps the published label when a refresh fails", async () => {
   const dispose = contributeApprovalPill(stubClient());
   requests = [request("req-1")];
   await vi.advanceTimersByTimeAsync(0);
-  expect(labels.at(-1)).toBe("응답 필요");
+  expect(labels.at(-1)).toBe("Needs reply");
 
   rpcFails = true;
   notify();
   await vi.advanceTimersByTimeAsync(250);
-  expect(labels.at(-1)).toBe("응답 필요");
+  expect(labels.at(-1)).toBe("Needs reply");
   expect(failures).toHaveBeenCalledOnce();
 
   dispose();

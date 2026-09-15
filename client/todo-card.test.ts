@@ -73,9 +73,9 @@ describe("todoCardModel", () => {
     expect(pending.rows[0]?.showActiveForm).toBe(false);
     expect(done.rows[0]?.showActiveForm).toBe(false);
 
-    expect(done.rows[0]?.accessibilityLabel).toBe("완료됨, wire the pump");
-    expect(busy.rows[0]?.accessibilityLabel).toBe("진행 중, wire the pump");
-    expect(pending.rows[0]?.accessibilityLabel).toBe("대기 중, wire the pump");
+    expect(done.rows[0]?.accessibilityLabel).toBe("Done, wire the pump");
+    expect(busy.rows[0]?.accessibilityLabel).toBe("In progress, wire the pump");
+    expect(pending.rows[0]?.accessibilityLabel).toBe("Pending, wire the pump");
   });
 
   it("streams an update in place: same row keys, untouched rows identical, only the flipped row changes", () => {
@@ -153,7 +153,7 @@ describe("todoCardModel compact phone layout (390px)", () => {
     expect(compactModel.badge.length).toBeGreaterThan(0);
     expect(compactModel.title.length).toBeGreaterThan(0);
     expect(compactModel.counter).toBe("1/2");
-    expect(compactModel.footer).toBe("작업 중…");
+    expect(compactModel.footer).toBe("Working…");
     for (const entry of compactModel.rows) {
       expect(entry.visual.marker.length).toBeGreaterThan(0);
       expect(entry.text.length).toBeGreaterThan(0);

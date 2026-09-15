@@ -61,8 +61,8 @@ describe("entryVisual", () => {
   });
 
   it("describes each row for a screen reader", () => {
-    expect(entryVisual("completed", theme).spoken).toBe("완료됨");
-    expect(entryVisual("in_progress", theme).spoken).toBe("진행 중");
-    expect(entryVisual("pending", theme).spoken).toBe("대기 중");
+    expect(entryVisual("completed", theme).spoken).toBe("Done");
+    expect(entryVisual("in_progress", theme).spoken).toBe("In progress");
+    expect(entryVisual("pending", theme).spoken).toBe("Pending");
   });
 });

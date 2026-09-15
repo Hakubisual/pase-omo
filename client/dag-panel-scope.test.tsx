@@ -179,7 +179,7 @@ test("an empty current session renders the existing empty snapshot copy without 
     agentId: "agent-1",
   } as unknown as Parameters<typeof DagMainView>[0]);
 
-  expect(renderedText(view)).toContain("DAG 실행 및 작업 기록 없음");
+  expect(renderedText(view)).toContain("No DAG runs or tasks");
   expect(renderedText(view)).not.toContain("session-other");
 });
 

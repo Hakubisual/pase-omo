@@ -97,7 +97,7 @@ describe("progressPercent", () => {
 
 describe("statusLabel", () => {
   it("keeps the Korean wording the card already shipped", () => {
-    expect(statusLabel("running")).toBe("실행 중");
-    expect(statusLabel("completed")).toBe("완료");
+    expect(statusLabel("running")).toBe("Running");
+    expect(statusLabel("completed")).toBe("Done");
   });
 });

@@ -120,23 +120,23 @@ describe("FolderBrowser", () => {
   it("renders an explicit empty state for empty input", () => {
     const tree = render({ tree: buildFolderTree([], [], []) });
 
-    expect(textElement(tree, "빈 폴더")).toBeDefined();
-    expect(textElement(tree, "아직 기록된 세션, 실행, 작업이 없습니다.")).toBeDefined();
-    expect(descendants(tree).some((element) => element.props.accessibilityLabel === "전체 폴더 열기/닫기")).toBe(false);
+    expect(textElement(tree, "Empty folder")).toBeDefined();
+    expect(textElement(tree, "No sessions, runs, or tasks recorded yet.")).toBeDefined();
+    expect(descendants(tree).some((element) => element.props.accessibilityLabel === "Toggle folder All")).toBe(false);
   });
 
   it("renders one row per visible folder at desktop width", () => {
     const tree = fixtureTree();
     const ui = render({ tree, expanded: defaultExpanded(tree) });
 
-    for (const label of ["전체", "세션 최신", "세션 오래된", "런 하나"]) {
+    for (const label of ["All", "세션 최신", "세션 오래된", "런 하나"]) {
       expect(textElement(ui, label)).toBeDefined();
     }
     // A collapsed run hides its task leaves until it is expanded.
     expect(descendants(ui).some((element) => element.props.children === "잎 작업")).toBe(false);
 
-    const sessionRow = flattenStyle(control(ui, "세션 최신 폴더 열기/닫기").props.style);
-    const runRow = flattenStyle(control(ui, "런 하나 폴더 열기/닫기").props.style);
+    const sessionRow = flattenStyle(control(ui, "Toggle folder 세션 최신").props.style);
+    const runRow = flattenStyle(control(ui, "Toggle folder 런 하나").props.style);
     expect(sessionRow.paddingLeft).toBe(12);
     expect(runRow.paddingLeft).toBe(24);
   });
@@ -146,11 +146,11 @@ describe("FolderBrowser", () => {
     const onToggle = vi.fn<(key: string) => void>();
     const ui = render({ tree, expanded: defaultExpanded(tree), onToggle });
 
-    await press(ui, "세션 최신 폴더 열기/닫기");
+    await press(ui, "Toggle folder 세션 최신");
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onToggle).toHaveBeenCalledWith(folderKey.session("s-new"));
 
-    await press(ui, "런 하나 폴더 열기/닫기");
+    await press(ui, "Toggle folder 런 하나");
     expect(onToggle).toHaveBeenCalledTimes(2);
     expect(onToggle).toHaveBeenLastCalledWith(folderKey.run("s-new", "r1"));
 
@@ -163,7 +163,7 @@ describe("FolderBrowser", () => {
     const expanded = toggleFolder(defaultExpanded(tree), folderKey.run("s-new", "r1"));
     const ui = render({ tree, expanded, onOpenSession });
 
-    await press(ui, "잎 작업 열기");
+    await press(ui, "Open 잎 작업");
     expect(onOpenSession).toHaveBeenCalledTimes(1);
     expect(onOpenSession).toHaveBeenCalledWith("s-new");
   });
@@ -185,13 +185,13 @@ describe("FolderBrowser", () => {
     );
     const ui = render({ tree, expanded: expandAll(tree), layout: { compact: true, platform: "ios" } });
 
-    for (const label of ["전체", longTitle, "긴 런 이름도 말줄임 대상입니다", longTask]) {
+    for (const label of ["All", longTitle, "긴 런 이름도 말줄임 대상입니다", longTask]) {
       const element = textElement(ui, label);
       expect(element.props.numberOfLines).toBeGreaterThanOrEqual(1);
       expect(flattenStyle(element.props.style)).toMatchObject({ maxWidth: "100%", flexShrink: 1 });
     }
 
-    for (const label of ["전체 폴더 열기/닫기", `${longTitle} 폴더 열기/닫기`, "긴 런 이름도 말줄임 대상입니다 폴더 열기/닫기"]) {
+    for (const label of ["Toggle folder All", `Toggle folder ${longTitle}`, "Toggle folder 긴 런 이름도 말줄임 대상입니다"]) {
       const style = flattenStyle(control(ui, label).props.style);
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
     }
@@ -209,6 +209,6 @@ describe("FolderBrowser", () => {
     const empty = descendants(ui).find((element) => element.props.testID === "folders-empty");
     expect(empty).toBeDefined();
     expect(flattenStyle(empty?.props.style)).toMatchObject({ width: "100%", maxWidth: 390, overflow: "hidden" });
-    expect(textElement(ui, "빈 폴더")).toBeDefined();
+    expect(textElement(ui, "Empty folder")).toBeDefined();
   });
 });
