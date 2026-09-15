@@ -27,7 +27,8 @@ function executable(path: string): boolean {
 function candidateNames(): string[] {
   if (process.platform !== "win32") return ["omo"];
   const exts = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
-  return exts.map((ext) => `omo${ext.toLowerCase()}`);
+  // Extensionless shims exist on Windows too, so the bare name stays a candidate.
+  return [...exts.map((ext) => `omo${ext.toLowerCase()}`), "omo"];
 }
 
 function fromPath(): string | undefined {
@@ -41,16 +42,55 @@ function fromPath(): string | undefined {
   return undefined;
 }
 
-/** Bun's global install keeps `omo-ai` next to a known runtime, which is how
- * omo is installed on this machine when no launcher shim is on PATH. */
-function fromBunGlobal(): OmoLaunch | undefined {
+/**
+ * Where package managers park a global `omo-ai`.
+ *
+ * The daemon does not necessarily inherit a login shell's PATH — one launched
+ * from a desktop session often gets a minimal one — so an install that is
+ * perfectly reachable in a terminal can be invisible to a PATH search. Probing
+ * these layouts by absolute path is what makes resolution survive that, and
+ * covering more than Bun is what makes a non-Bun install resolve at all.
+ */
+function globalPackageRoots(): string[] {
   const home = homedir();
-  const entry = join(home, ".bun", "install", "global", "node_modules", "omo-ai", "bin", "omo.js");
-  if (!existsSync(entry)) return undefined;
-  const bun = join(home, ".bun", "bin", process.platform === "win32" ? "bun.exe" : "bun");
-  if (executable(bun)) return { command: bun, base: [entry], origin: "bun global install" };
-  const node = fromPathNamed("node");
-  if (node) return { command: node, base: [entry], origin: "node + bun global install" };
+  const roots: string[] = [join(home, ".bun", "install", "global", "node_modules")];
+  const add = (...parts: Array<string | undefined>): void => {
+    if (parts.every((part) => typeof part === "string" && part.length > 0)) {
+      roots.push(join(...(parts as string[])));
+    }
+  };
+  add(process.env.PNPM_HOME, "global", "5", "node_modules");
+  if (process.platform === "win32") {
+    add(process.env.npm_config_prefix, "node_modules");
+    add(process.env.APPDATA, "npm", "node_modules");
+    add(home, "AppData", "Roaming", "npm", "node_modules");
+  } else {
+    add(process.env.npm_config_prefix, "lib", "node_modules");
+    roots.push("/usr/local/lib/node_modules", "/usr/lib/node_modules", "/opt/homebrew/lib/node_modules");
+    add(home, ".npm-global", "lib", "node_modules");
+    add(home, ".local", "share", "pnpm", "global", "5", "node_modules");
+    add(home, ".config", "yarn", "global", "node_modules");
+  }
+  add(home, ".yarn", "global", "node_modules");
+  return [...new Set(roots)];
+}
+
+/** A runtime able to execute omo's `.js` entry point. */
+function javascriptRuntime(): string | undefined {
+  const bun = join(homedir(), ".bun", "bin", process.platform === "win32" ? "bun.exe" : "bun");
+  if (executable(bun)) return bun;
+  return fromPathNamed("bun") ?? fromPathNamed("node");
+}
+
+/** A global `omo-ai` package plus a runtime to launch its entry point. */
+function fromGlobalInstall(searched: string[]): OmoLaunch | undefined {
+  for (const root of globalPackageRoots()) {
+    const entry = join(root, "omo-ai", "bin", "omo.js");
+    searched.push(entry);
+    if (!existsSync(entry)) continue;
+    const runtime = javascriptRuntime();
+    if (runtime) return { command: runtime, base: [entry], origin: `global install at ${root}` };
+  }
   return undefined;
 }
 
@@ -158,10 +198,19 @@ export function resolveOmoLaunch(env: NodeJS.ProcessEnv = process.env): OmoLaunc
   const onPath = fromPath();
   if (onPath) return { command: onPath, base: [], origin: "PATH" };
 
-  const bunGlobal = fromBunGlobal();
-  if (bunGlobal) return bunGlobal;
+  // Report what was looked at: "not found" while omo is demonstrably installed
+  // is otherwise impossible to act on, and the usual cause is a daemon PATH that
+  // does not match the terminal's.
+  const searched: string[] = [];
+  const globalInstall = fromGlobalInstall(searched);
+  if (globalInstall) return globalInstall;
 
   throw new Error(
-    "OmO CLI not found. Install it with `bun add -g omo-ai@beta` or set PASEO_OMO_COMMAND to a JSON argv array.",
+    [
+      "OmO CLI not found. Install it with `bun add -g omo-ai@beta`, or set PASEO_OMO_COMMAND",
+      "to a JSON argv array if it lives somewhere else.",
+      `Searched PATH (${(process.env.PATH ?? "").split(delimiter).filter(Boolean).length} entries) and:`,
+      ...searched.map((entry) => `  ${entry}`),
+    ].join("\n"),
   );
 }
