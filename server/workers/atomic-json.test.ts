@@ -10,7 +10,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("retains and then replaces a snapshot when a Windows reader briefly denies replacement", async () => {
+test("retains and then replaces a snapshot when a reader briefly denies replacement", async () => {
   // Given a real old snapshot and one observed sharing violation at the rename seam.
   const directory = mkdtempSync(path.join(tmpdir(), "omo-atomic-"));
   const file = path.join(directory, "state.json");
@@ -21,7 +21,7 @@ test("retains and then replaces a snapshot when a Windows reader briefly denies 
   vi.useFakeTimers();
   vi.spyOn(fs, "rename").mockImplementationOnce(async () => {
     observed();
-    throw Object.assign(new Error("Windows sharing violation"), { code: "EPERM" });
+    throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
   }).mockImplementation(rename);
   try {
     // When a state publication encounters that transient reader.
