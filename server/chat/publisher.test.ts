@@ -7,10 +7,11 @@ import { createPublisher } from "./publisher.js";
 
 /**
  * The publisher polls the run store while a turn is live and appends one
- * timeline card per run. These tests pin the three ways that loop used to
- * outlive or under-serve its agent: a session record the daemon had not written
- * yet, a teardown that an in-flight append ran past, and per-agent state the
- * process kept for as long as it lived.
+ * timeline card per run, drawn when the run settles (see dag-one-card.test.ts
+ * for that contract). These tests pin the three ways that loop used to outlive
+ * or under-serve its agent: a session record the daemon had not written yet, a
+ * teardown that an in-flight append ran past, and per-agent state the process
+ * kept for as long as it lived.
  */
 
 const SESSION = "sess-1";
@@ -44,7 +45,7 @@ async function fixture() {
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, body);
   };
-  const saveRun = (runId: string): Promise<void> =>
+  const saveRun = (runId: string, status = "running"): Promise<void> =>
     write(
       join(cwd, ".omo", "senpi-task", "dag", "runs", `${runId}.json`),
       JSON.stringify({
@@ -52,9 +53,9 @@ async function fixture() {
         runId,
         parentSessionId: SESSION,
         name: runId,
-        status: "running",
+        status,
         updatedAt: new Date(Date.now()).toISOString(),
-        nodes: [{ id: "n1", label: "node", state: "running" }],
+        nodes: [{ id: "n1", label: "node", state: status === "completed" ? "completed" : "running" }],
       }),
     );
   const saveAgentRecord = (): Promise<void> =>
@@ -106,6 +107,9 @@ test("a session record the daemon has not written yet resolves on a later tick",
 
   await saveAgentRecord();
   await publisher.onTurnEnded(agent, context);
+  // The run is still working, so its card is drawn when the watch retires.
+  await vi.advanceTimersByTimeAsync(GRACE_MS + 1000);
+  await publisher.settle();
 
   expect(appends.map((item) => item.id)).toEqual(["dag-dag_1"]);
   publisher.dispose();
@@ -114,8 +118,10 @@ test("a session record the daemon has not written yet resolves on a later tick",
 test("disposal stops the publisher mid-run instead of finishing the batch", async () => {
   const { agent, saveRun, saveAgentRecord } = await fixture();
   await saveAgentRecord();
-  await saveRun("dag_1");
-  await saveRun("dag_2");
+  // Settled, so the first read has cards to draw and the hold below lands
+  // inside an append rather than never happening.
+  await saveRun("dag_1", "completed");
+  await saveRun("dag_2", "completed");
 
   let entered!: () => void;
   const firstAppend = new Promise<void>((resolve) => {
@@ -150,11 +156,15 @@ test("a run that did not change is not republished after the grace window closes
 
   await publisher.onTurnStarted(agent, context);
   await publisher.onTurnEnded(agent, context);
-  // Nothing changed on disk, so the signature cache suppresses a second append.
-  expect(appends).toHaveLength(1);
+  // A run still in motion is the pill's business, so nothing is drawn yet.
+  expect(appends).toEqual([]);
 
   await vi.advanceTimersByTimeAsync(GRACE_MS);
+  await publisher.settle();
+  expect(appends).toHaveLength(1);
+
   await publisher.onTurnStarted(agent, context);
+  await publisher.settle();
 
   // The polling watch is gone, but the published signatures are NOT: Paseo's
   // timeline store appends every item under a fresh seq (agent-timeline-store
