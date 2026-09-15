@@ -82,14 +82,18 @@ label.
 
 <table>
 <tr>
-<td><img src="docs/images/mobile-dag-card.png" width="250" alt="DAG card on a phone"></td>
-<td><img src="docs/images/mobile-dag-sheet.png" width="250" alt="DAG pill sheet on a phone"></td>
-<td><img src="docs/images/mobile-approval.png" width="250" alt="Approvals sheet on a phone"></td>
-<td><img src="docs/images/mobile-todo.png" width="250" alt="Todo card on a phone"></td>
+<td width="50%"><img src="docs/images/mobile-dag-card.png" width="300" alt="DAG card on a phone"></td>
+<td width="50%"><img src="docs/images/mobile-dag-sheet.png" width="300" alt="DAG pill sheet on a phone"></td>
 </tr>
 <tr>
 <td align="center"><sub>Chat DAG card</sub></td>
 <td align="center"><sub>DAG pill sheet</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/mobile-approval.png" width="300" alt="Approvals sheet on a phone"></td>
+<td width="50%"><img src="docs/images/mobile-todo.png" width="300" alt="Todo card on a phone"></td>
+</tr>
+<tr>
 <td align="center"><sub>Approvals sheet</sub></td>
 <td align="center"><sub>Live todo card</sub></td>
 </tr>
