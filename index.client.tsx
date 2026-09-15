@@ -8,6 +8,7 @@ import { FoldersPanel } from "./client/folders-panel.js";
 import { DagGlobalSurface, DagPanel } from "./client/dag.js";
 import { DagRunRow } from "./client/dag-row.js";
 import { contributeTodoClient } from "./client/todo-card.js";
+import { contributeWrapClient } from "./client/wrap-card.js";
 import { contributeUpdateButton, OmoUpdatePanel } from "./client/update-button.js";
 import {
   APPROVAL_PANEL_ID,
@@ -137,6 +138,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     contributeUpdateButton(client),
     contributeApprovalPill(client),
     contributeTodoClient(client),
+    contributeWrapClient(client),
   );
 
   return () => {

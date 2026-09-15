@@ -14,6 +14,7 @@ import type { OmoLaunch } from "./omo-cli.js";
 import { type OmoEvent, OmoProcess } from "./omo-process.js";
 import { todoItems, toolCallDetail, toolResultText } from "./tool-detail.js";
 import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-publish.js";
+import { visibleTimelineItems } from "./text-wrap.js";
 
 type Json = Record<string, unknown>;
 
@@ -271,6 +272,16 @@ export class OmoSession {
     this.emit({ type: "timeline.item", sessionId: this.sessionId, item });
   }
 
+  /** Publish user/assistant text, wrapping OmO harness XML as compact bars. */
+  private publishVisibleText(
+    role: "user" | "assistant",
+    id: string,
+    text: string,
+    extra?: { clientMessageId: string },
+  ): void {
+    for (const item of visibleTimelineItems(role, id, text, extra)) this.item(item);
+  }
+
   /** Spawn, wait for the agent session to exist, and publish the opened state. */
   async open(requestId: string, history: "replay" | "skip"): Promise<void> {
     this.proc.start();
@@ -371,11 +382,11 @@ export class OmoSession {
       if (message.display === false) continue;
       const text = messageText(message.content);
       if (role === "user" && text) {
-        this.item({ type: "user_message", id: `replay-user-${index}`, text });
+        this.publishVisibleText("user", `replay-user-${index}`, text);
         continue;
       }
       if (role !== "assistant") continue;
-      if (text) this.item({ type: "assistant_message", id: `replay-assistant-${index}`, text });
+      if (text) this.publishVisibleText("assistant", `replay-assistant-${index}`, text);
       for (const call of messageToolCalls(message.content)) {
         this.item({
           type: "tool_call",
@@ -403,7 +414,7 @@ export class OmoSession {
         });
         return;
       }
-      this.item({ type: "user_message", id: `user-steer-${clientMessageId}`, text, clientMessageId });
+      this.publishVisibleText("user", `user-steer-${clientMessageId}`, text, { clientMessageId });
       void this.proc
         .call("steer", { message: text, ...(images.length > 0 ? { images } : {}) })
         .catch((error: unknown) => this.reportPromptFailure(clientMessageId, error));
@@ -419,7 +430,7 @@ export class OmoSession {
     this.turnSeq += 1;
     const turnId = `turn-${this.turnSeq}`;
     this.activeTurnId = turnId;
-    this.item({ type: "user_message", id: `user-${this.turnSeq}`, text, clientMessageId });
+    this.publishVisibleText("user", `user-${this.turnSeq}`, text, { clientMessageId });
     this.emit({ type: "session.prompt_result", sessionId: this.sessionId, clientMessageId, result: { type: "turn", turnId } });
     this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: "started" });
     void this.proc
@@ -781,7 +792,11 @@ export class OmoSession {
     }
     const text = this.textBuffers.get(id);
     if (text === undefined || text === "") return;
-    this.item(kind === "assistant" ? { type: "assistant_message", id, text } : { type: "reasoning", id, text });
+    if (kind === "reasoning") {
+      this.item({ type: "reasoning", id, text });
+      return;
+    }
+    this.publishVisibleText("assistant", id, text);
   }
 
   private flushAll(): void {
