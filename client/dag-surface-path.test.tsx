@@ -106,7 +106,7 @@ test("every known project is offered as a one-tap shortcut", () => {
   for (const project of harness.projects) expect(text).toContain(project.cwd.split("/").pop() ?? project.cwd);
 
   const shortcuts = elements(surface).filter(
-    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("프로젝트 선택"),
+    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("Select project"),
   );
   expect(shortcuts).toHaveLength(harness.projects.length);
 });
@@ -122,7 +122,7 @@ test("a long project list stays a header, not the whole first screen", () => {
 
   const surface = DagGlobalSurface(hostProps as Parameters<typeof DagGlobalSurface>[0]);
   const shortcuts = elements(surface).filter(
-    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("프로젝트 선택"),
+    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("Select project"),
   );
 
   expect(shortcuts.length).toBeLessThanOrEqual(6);
@@ -132,7 +132,7 @@ test("a long project list stays a header, not the whole first screen", () => {
   ).toBe(true);
 
   const more = elements(surface).find(
-    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("프로젝트 더 보기"),
+    (element) => element.type === "Pressable" && String(element.props.accessibilityLabel ?? "").includes("more projects"),
   );
   expect(more).toBeDefined();
 });

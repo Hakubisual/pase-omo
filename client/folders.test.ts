@@ -165,7 +165,7 @@ describe("buildFolderTree", () => {
 
     const tree = buildFolderTree([], runs, tasks);
 
-    expect(tree.root.children.map((node) => node.label)).toEqual(["미분류"]);
+    expect(tree.root.children.map((node) => node.label)).toEqual(["Unfiled"]);
     expect(tree.root.children[0]?.sessionId).toBe("");
     expect(tree.count).toBe(1);
   });
