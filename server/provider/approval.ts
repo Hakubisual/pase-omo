@@ -16,8 +16,12 @@ export async function listPendingApprovals(
   context: PluginHandlerContext,
   registry: OmoSessionRegistry = omoSessionRegistry,
 ): Promise<ListPendingApprovalsPayload> {
-  const session = await registry.forAgent(input.agentId, context);
-  return { requests: session.getPendingUiRequests() };
+  // An agent with no live session has nothing pending, which is an answer, not
+  // a failure: the composer pill asks for every OmO agent it can see, including
+  // closed ones, and a throw there turned an ordinary state into a console full
+  // of DaemonRpcErrors and a pill stuck on its last label.
+  const session = await registry.forAgent(input.agentId, context).catch(() => undefined);
+  return { requests: session?.getPendingUiRequests() ?? [] };
 }
 
 export async function submitApprovalResponse(
