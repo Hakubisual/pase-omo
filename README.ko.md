@@ -78,14 +78,18 @@ OmO가 확인이나 목록 선택, 자유 답변이 필요할 때 팝업으로 �
 
 <table>
 <tr>
-<td><img src="docs/images/mobile-dag-card.png" width="250" alt="폰의 DAG 카드"></td>
-<td><img src="docs/images/mobile-dag-sheet.png" width="250" alt="폰의 DAG pill 시트"></td>
-<td><img src="docs/images/mobile-approval.png" width="250" alt="폰의 승인 시트"></td>
-<td><img src="docs/images/mobile-todo.png" width="250" alt="폰의 투두 카드"></td>
+<td width="50%"><img src="docs/images/mobile-dag-card.png" width="300" alt="폰의 DAG 카드"></td>
+<td width="50%"><img src="docs/images/mobile-dag-sheet.png" width="300" alt="폰의 DAG pill 시트"></td>
 </tr>
 <tr>
 <td align="center"><sub>채팅 DAG 카드</sub></td>
 <td align="center"><sub>DAG pill 시트</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/mobile-approval.png" width="300" alt="폰의 승인 시트"></td>
+<td width="50%"><img src="docs/images/mobile-todo.png" width="300" alt="폰의 투두 카드"></td>
+</tr>
+<tr>
 <td align="center"><sub>승인 시트</sub></td>
 <td align="center"><sub>실시간 투두 카드</sub></td>
 </tr>
