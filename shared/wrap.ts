@@ -41,6 +41,7 @@ const KNOWN_BADGE: Readonly<Record<string, string>> = {
   "omo-senpi-task": "Task",
   memory_notice: "Memory",
   memory_metadata: "Memory",
+  "recalled-memory": "Memory",
   "ultrawork-mode": "Ultrawork",
   "system-reminder": "Notice",
   timestamp: "Time",
@@ -65,7 +66,7 @@ const COMPACTION_FAILURE = "Context remains above the compaction threshold becau
 export function isHarnessTag(tag: string): boolean {
   const lower = tag.toLowerCase();
   if (KNOWN_BADGE[lower] !== undefined) return true;
-  return /^(?:omo-|senpi-|pi-)/.test(lower) || lower.startsWith("memory_");
+  return /^(?:omo-|senpi-|pi-)/.test(lower) || lower.includes("memory");
 }
 
 export function isUnwrapTag(tag: string): boolean {
@@ -193,8 +194,11 @@ export function badgeFor(tag: string): string {
  * First prose paragraph, so the bar reads like the TUI usage line instead of
  * dumping the whole XML body. Bullet lists after that paragraph stay off-screen.
  */
+const KIBITZER_PREAMBLE = /^Kibitzer recalled a stored memory\.[^\n]*/i;
+
 export function summarizeHarness(body: string): string {
-  const lines = body.split(/\r?\n/);
+  const stripped = body.replace(KIBITZER_PREAMBLE, "").trim();
+  const lines = (stripped.length > 0 ? stripped : body).split(/\r?\n/);
   const collected: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();

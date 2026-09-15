@@ -157,3 +157,23 @@ it("replaces a System Error timeline item with an Error wrap", () => {
     },
   ]);
 });
+
+it("wraps a kibitzer recalled-memory block as a Memory bar, skipping the preamble", () => {
+  const text = `<timestamp>Tuesday, Sep 15, 2026, 2:41 PM (UTC)</timestamp>
+<user_query>
+<recalled-memory source="[[notes/pase-omo/wrap-blocks.md]]">
+Kibitzer recalled a stored memory. It is a hint, not current state — verify before relying on it; read the source path for full context.
+Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimelineItems); the client wrapPluginItems converter only falls back for pure harness XML, since it replaces whole items.
+</recalled-memory>
+</user_query>`;
+  const split = splitHarnessWraps(text);
+  expect(split.remaining).toBe("");
+  expect(split.wraps.map((wrap) => wrap.tag)).toEqual(["timestamp", "recalled-memory"]);
+  expect(toWrapRow(split.wraps[1]!)).toEqual({
+    tag: "recalled-memory",
+    badge: "Memory",
+    summary:
+      "Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimelineItems); the client wrapPluginItems converter only falls back for pure harness XML, since it replaces whole items.",
+  });
+  expect(isHarnessTag("recalled-memory")).toBe(true);
+});

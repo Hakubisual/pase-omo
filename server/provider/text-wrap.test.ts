@@ -72,6 +72,19 @@ it("wraps timestamp and memory, unwraps user_query, and keeps leftover user pros
   ]);
 });
 
+it("publishes timestamp and recalled-memory as wraps, never a user_message", () => {
+  const text = `<timestamp>Tuesday, Sep 15, 2026, 2:41 PM (UTC)</timestamp>
+<user_query>
+<recalled-memory source="[[notes/pase-omo/wrap-blocks.md]]">
+Kibitzer recalled a stored memory. It is a hint, not current state — verify before relying on it; read the source path for full context.
+Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimelineItems); the client wrapPluginItems converter only falls back for pure harness XML, since it replaces whole items.
+</recalled-memory>
+</user_query>`;
+  const items = visibleTimelineItems("user", "user-5", text, { clientMessageId: "c5" });
+  expect(items.map((item) => item.type)).toEqual(["plugin", "plugin"]);
+  expect(items.map((item) => (item as { data?: { badge?: string } }).data?.badge)).toEqual(["Time", "Memory"]);
+});
+
 it("publishes each harness bar then the leftover user prose, matching the injected prompt", () => {
   const text = `${TASK}
 
