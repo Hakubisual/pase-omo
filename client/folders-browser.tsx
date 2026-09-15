@@ -48,8 +48,8 @@ export function folderBrowserModel(tree: FolderTree, expanded: ReadonlySet<strin
   return { rows: visibleFolders(tree, expanded), empty: tree.empty };
 }
 
-const EMPTY_TITLE = "Empty folder";
-const EMPTY_BODY = "No sessions, runs, or tasks recorded yet.";
+const EMPTY_TITLE = "빈 폴더";
+const EMPTY_BODY = "아직 기록된 세션, 실행, 작업이 없습니다.";
 
 /** Glyphs per row kind; task leaves use the shared status glyph instead. */
 const KIND_GLYPH: Record<FolderNode["kind"], string> = {
@@ -174,7 +174,7 @@ export function FolderBrowser(props: FolderBrowserProps) {
           return (
             <Pressable
               key={node.key}
-              accessibilityLabel={`Open ${node.label}`}
+              accessibilityLabel={`${node.label} 열기`}
               accessibilityRole="button"
               onPress={() => onOpenSession(node.sessionId)}
               style={[styles.row, indent]}
@@ -191,7 +191,7 @@ export function FolderBrowser(props: FolderBrowserProps) {
         return (
           <Pressable
             key={node.key}
-            accessibilityLabel={`Toggle folder ${node.label}`}
+            accessibilityLabel={`${node.label} 폴더 열기/닫기`}
             accessibilityRole="button"
             onPress={() => onToggle(node.key)}
             style={[styles.row, indent]}

@@ -26,9 +26,9 @@ export type EntryVisual = {
 };
 
 const SPOKEN: Record<TodoStatus, string> = {
-  completed: "Done",
-  in_progress: "In progress",
-  pending: "Pending",
+  completed: "완료됨",
+  in_progress: "진행 중",
+  pending: "대기 중",
 };
 
 /** One drawn row of the card, with the pieces the view needs pre-resolved. */
@@ -72,10 +72,10 @@ export type TodoCardModel = {
   rows: TodoRowVisual[];
 };
 
-const BADGE = "TODO";
-const FOOTER = "Working…";
-const TITLE_ALL_DONE = "All done";
-const titleRemaining = (remaining: number): string => `${remaining} left`;
+const BADGE = "할 일";
+const FOOTER = "작업 중…";
+const TITLE_ALL_DONE = "모두 완료";
+const titleRemaining = (remaining: number): string => `남은 항목 ${remaining}`;
 
 /** Fixed width of the marker column ("[ ]"/"[•]"/"[✓]" plus breathing room). */
 const MARKER_WIDTH = 24;

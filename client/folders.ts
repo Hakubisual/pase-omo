@@ -66,7 +66,7 @@ export interface FolderTree {
  * Where content came from. `dag.snapshot` returns runs and tasks for one
  * session but neither `DagRun` nor `DagTask` carries the session id, so the
  * caller states which session the content belongs to; content handed over with
- * no (or an unknown) session groups under the explicit Unfiled folder.
+ * no (or an unknown) session groups under the explicit 미분류 folder.
  */
 export interface FolderScope {
   sessionId?: string | undefined;
@@ -87,10 +87,10 @@ const taskStamp = (task: DagTask): string => task.startedAt ?? task.completedAt 
 const beforeTask = (a: DagTask, b: DagTask): number =>
   taskStamp(a).localeCompare(taskStamp(b)) || a.id.localeCompare(b.id);
 
-const ROOT_LABEL = "All";
+const ROOT_LABEL = "전체";
 
 /** Content that arrived without a session scope groups under this folder. */
-const UNFILED_LABEL = "Unfiled";
+const UNFILED_LABEL = "미분류";
 
 const taskLabel = (task: DagTask): string =>
   task.description?.trim() ? task.description : `${task.id.slice(0, 12)}…`;

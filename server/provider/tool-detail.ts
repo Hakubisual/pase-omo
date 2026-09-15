@@ -192,7 +192,7 @@ export function todoItems(rawArgs: unknown, result?: unknown): TodoItemDetail[] 
         const text = phaseName ? `${phaseName}: ${content}` : content;
         if (declared !== undefined && TERMINAL_TODO_STATUSES.has(declared)) {
           // Deliberately dropped work (abandoned/cancelled) is terminal by
-          // choice; settling it as completed keeps "N left" honest.
+          // choice; settling it as completed keeps "남은 항목" honest.
           items.push({ text, completed: true, status: "completed" });
         } else if (declared !== undefined && LIVE_TODO_STATUSES.has(declared)) {
           items.push({ text, completed: declared === "completed", status: declared as TodoStatusValue });

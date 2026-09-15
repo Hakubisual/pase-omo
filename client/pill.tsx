@@ -35,7 +35,7 @@ export function DagPillPopover(props: PluginButtonContentProps) {
     <ScrollView style={{ maxHeight: styles.screen.maxHeight }} contentContainerStyle={styles.screen}>
       {rows.length === 0 ? (
         <Text style={styles.empty}>
-          {query.isPending ? "Loading DAG runs…" : "No DAG runs in the last 6 hours."}
+          {query.isPending ? "DAG 실행 기록을 읽는 중…" : "최근 6시간 안에 실행된 DAG가 없다."}
         </Text>
       ) : (
         rows

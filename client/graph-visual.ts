@@ -14,15 +14,15 @@ export const DAG_STATES = [
 ] as const;
 
 const LABELS: Record<string, string> = {
-  completed: "Done",
-  running: "Running",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  skipped: "Skipped",
-  blocked: "Blocked",
-  scheduled: "Scheduled",
-  paused: "Paused",
-  pending: "Pending",
+  completed: "완료",
+  running: "실행 중",
+  failed: "실패",
+  cancelled: "취소됨",
+  skipped: "건너뜀",
+  blocked: "의존 대기",
+  scheduled: "배정",
+  paused: "일시정지",
+  pending: "대기",
 };
 
 /**

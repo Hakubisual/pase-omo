@@ -41,7 +41,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addWorkspacePanel({
       id: APPROVAL_PANEL_ID,
-      title: "OmO Approvals",
+      title: "OmO 승인",
       icon: "ShieldCheck",
       context: "agent",
       locations: ["workspace", "explorer"],
@@ -49,7 +49,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addWorkspacePanel({
       id: FOLDERS_PANEL_ID,
-      title: "OmO Folders",
+      title: "OmO 폴더",
       icon: "FolderTree",
       context: "workspace",
       locations: ["workspace", "explorer"],
@@ -64,7 +64,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addCommandCenterItem({
       id: "open-dag-panel",
-      title: "Open OmO DAG",
+      title: "OmO DAG 열기",
       icon: "GitFork",
       keywords: ["omo", "dag", "tasks", "subagents"],
       context: "workspace",
@@ -74,7 +74,7 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addCommandCenterItem({
       id: "open-dag-explorer",
-      title: "Open OmO DAG in Side Panel",
+      title: "OmO DAG 사이드로 열기",
       icon: "PanelRight",
       keywords: ["omo", "dag", "explorer"],
       context: "workspace",
@@ -84,9 +84,9 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addCommandCenterItem({
       id: "open-approvals-panel",
-      title: "Open OmO Approvals",
+      title: "OmO 승인 열기",
       icon: "ShieldCheck",
-      keywords: ["omo", "approval", "permission", "question", "approve"],
+      keywords: ["omo", "approval", "permission", "question", "승인"],
       context: "agent",
       onSelect({ openPanel }) {
         openPanel(APPROVAL_PANEL_ID, { location: "explorer" });
@@ -94,9 +94,9 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     client.addCommandCenterItem({
       id: "open-folders-panel",
-      title: "Open OmO Folders",
+      title: "OmO 폴더 열기",
       icon: "FolderTree",
-      keywords: ["omo", "folder", "sessions", "folders", "sessions"],
+      keywords: ["omo", "folder", "sessions", "폴더", "세션"],
       context: "workspace",
       onSelect({ openPanel }) {
         openPanel(FOLDERS_PANEL_ID, { location: "explorer" });

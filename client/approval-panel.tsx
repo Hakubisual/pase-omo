@@ -56,22 +56,22 @@ export function ApprovalPanel({ agentId, theme, layout }: PluginAgentPanelProps)
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.title}>OmO Approvals</Text>
-      {pending ? <Text style={styles.badge}>Waiting</Text> : null}
+      <Text style={styles.title}>OmO 승인</Text>
+      {pending ? <Text style={styles.badge}>응답 대기 중</Text> : null}
       <Text style={styles.body}>
         {pending
-          ? "OmO is waiting for a confirmation, choice, or answer."
-          : "No pending requests. This view opens the moment one arrives."}
+          ? "OmO가 확인, 선택 또는 답변을 기다리고 있습니다."
+          : "지금은 기다리는 요청이 없습니다. 요청이 오면 이 화면이 바로 열립니다."}
       </Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Open OmO request"
+        accessibilityLabel="OmO 요청 열기"
         disabled={!pending}
         onPress={() => setOpen(true)}
         style={[styles.button, pending ? null : styles.buttonIdle]}
       >
         <Text style={pending ? styles.buttonLabel : styles.buttonLabelIdle}>
-          {pending ? "Open request" : "No pending requests"}
+          {pending ? "요청 열기" : "대기 중인 요청 없음"}
         </Text>
       </Pressable>
 

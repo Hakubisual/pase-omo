@@ -168,7 +168,7 @@ function GraphNodeCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Node ${node.label}, ${visual.label}`}
+      accessibilityLabel={`노드 ${node.label}, ${visual.label}`}
       accessibilityState={{ selected }}
       onPress={onPress}
       style={({ pressed }) => [
@@ -343,78 +343,78 @@ function NodeInspector({
       <View style={styles.inspectorHeader}>
         <View style={styles.inspectorTitleGroup}>
           <Text style={styles.inspectorTitle} numberOfLines={1} ellipsizeMode="tail">
-            Node detail: {chip?.label ?? nodeId}
+            노드 상세: {chip?.label ?? nodeId}
           </Text>
           <Text style={styles.inspectorSub} numberOfLines={1} ellipsizeMode="tail">
             {nodeId}
-            {attempt > 0 ? ` · attempt ${attempt + 1}` : ""}
+            {attempt > 0 ? ` · 시도 ${attempt + 1}` : ""}
           </Text>
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Close detail"
+          accessibilityLabel="상세 닫기"
           onPress={onClose}
           style={styles.inspectorClose}
         >
-          <Text style={styles.inspectorCloseText}>✕ Close</Text>
+          <Text style={styles.inspectorCloseText}>✕ 닫기</Text>
         </Pressable>
       </View>
 
       {detail?.node.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>Error</Text>
+          <Text style={styles.errorTitle}>오류 발생</Text>
           <Text style={styles.errorText}>{detail.node.error}</Text>
         </View>
       ) : null}
 
       {task?.description ? (
-        <DetailField label="Description" value={task.description} styles={styles} wide />
+        <DetailField label="설명" value={task.description} styles={styles} wide />
       ) : null}
 
       <View style={styles.detailGrid}>
         <View style={styles.detailGridItem}>
-          <Text style={styles.detailLabel}>Status</Text>
+          <Text style={styles.detailLabel}>상태</Text>
           <Text style={[styles.detailValue, { color: nodeVisual(chip?.state ?? "pending", theme).borderColor }]}>
             {statusLabel(chip?.state ?? "pending")}
           </Text>
         </View>
-        {wave >= 0 ? <DetailField label="Wave" value={`stage ${wave + 1}`} styles={styles} /> : null}
-        {task?.agent ? <DetailField label="Agent" value={task.agent} styles={styles} /> : null}
-        {task?.model ? <DetailField label="Model" value={task.model} styles={styles} /> : null}
+        {wave >= 0 ? <DetailField label="웨이브" value={`${wave + 1}단계`} styles={styles} /> : null}
+        {task?.agent ? <DetailField label="에이전트" value={task.agent} styles={styles} /> : null}
+        {task?.model ? <DetailField label="모델" value={task.model} styles={styles} /> : null}
         {task?.turns !== undefined ? (
-          <DetailField label="Turns" value={`${task.turns} turns`} styles={styles} />
+          <DetailField label="턴" value={`${task.turns}턴`} styles={styles} />
         ) : null}
         {task?.toolCalls !== undefined ? (
-          <DetailField label="Tool calls" value={`${task.toolCalls}`} styles={styles} />
+          <DetailField label="도구 호출" value={`${task.toolCalls}회`} styles={styles} />
         ) : null}
         {task?.startedAt ? (
           <DetailField
-            label="Elapsed"
+            label="경과 시간"
             value={formatDuration(task.startedAt, task.completedAt)}
             styles={styles}
           />
         ) : null}
         {task?.startedAt ? (
-          <DetailField label="Started" value={formatKoreanDateTime(task.startedAt)} styles={styles} />
+          <DetailField label="시작 시각" value={formatKoreanDateTime(task.startedAt)} styles={styles} />
         ) : null}
       </View>
 
       {upstream.length > 0 ? (
-        <DetailField label="Upstream" value={upstream.join(", ")} styles={styles} wide />
+        <DetailField label="선행 노드" value={upstream.join(", ")} styles={styles} wide />
       ) : null}
       {downstream.length > 0 ? (
-        <DetailField label="Downstream" value={downstream.join(", ")} styles={styles} wide />
+        <DetailField label="후행 노드" value={downstream.join(", ")} styles={styles} wide />
       ) : null}
 
       {task?.progress ? (
         <View style={styles.progressBox}>
-          <Text style={styles.progressLabel}>Progress</Text>
+          <Text style={styles.progressLabel}>진행 상황</Text>
           <Text style={styles.progressText}>{task.progress}</Text>
         </View>
       ) : null}
 
       {detail?.node.taskId ? (
-        <Text style={styles.taskIdFooter}>Linked task ID: {detail.node.taskId}</Text>
+        <Text style={styles.taskIdFooter}>연결된 태스크 ID: {detail.node.taskId}</Text>
       ) : null}
     </View>
   );
@@ -476,9 +476,9 @@ export function DagGraph({
 
   const footer = [
     statusLabel(row.status),
-    row.running > 0 ? `${row.running} running` : null,
-    row.failed > 0 ? `${row.failed} failed` : null,
-    row.truncated ? "nodes truncated" : null,
+    row.running > 0 ? `실행 중 ${row.running}` : null,
+    row.failed > 0 ? `실패 ${row.failed}` : null,
+    row.truncated ? "일부 노드 생략" : null,
   ]
     .filter((part): part is string => part !== null)
     .join(" · ");
@@ -500,7 +500,7 @@ export function DagGraph({
       </View>
 
       {layout.nodes.length === 0 ? (
-        <Text style={styles.empty}>No nodes to show</Text>
+        <Text style={styles.empty}>표시할 노드가 없습니다</Text>
       ) : (
         <ScrollView
           horizontal
@@ -579,7 +579,7 @@ export function DagGraph({
           onClose={() => setSelectedId(null)}
         />
       ) : layout.nodes.length > 0 ? (
-        <Text style={styles.hint}>Tap a node for details</Text>
+        <Text style={styles.hint}>노드를 누르면 상세 정보가 표시됩니다</Text>
       ) : null}
 
       <Text style={styles.footer}>{footer}</Text>

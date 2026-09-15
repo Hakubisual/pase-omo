@@ -69,9 +69,9 @@ export function createApprovalSubmitter({
 }
 
 function modalTitle(method: PendingApprovalRequest["method"]): string {
-  if (method === "confirm") return "OmO Approval Request";
-  if (method === "select") return "OmO Choice Request";
-  return "OmO Question";
+  if (method === "confirm") return "OmO 승인 요청";
+  if (method === "select") return "OmO 선택 요청";
+  return "OmO 질문";
 }
 
 /**
@@ -236,13 +236,13 @@ export function ApprovalRequestBody({
           {request.options.length > 0 ? (
             <View style={styles.optionList}>
               <Text style={styles.hint} numberOfLines={1} ellipsizeMode="tail">
-                Suggested answers
+                추천 답변
               </Text>
               {request.options.map((option) => (
                 <Pressable
                   key={option.action}
                   accessibilityRole="button"
-                  accessibilityLabel={`Choose ${remoteSafeLabel(option.label)}`}
+                  accessibilityLabel={`${remoteSafeLabel(option.label)} 선택`}
                   disabled={submitting}
                   style={[styles.option, submitting && styles.disabled]}
                   onPress={() => onRespond({ behavior: "allow", action: option.action })}
@@ -255,11 +255,11 @@ export function ApprovalRequestBody({
             </View>
           ) : null}
           <TextInput
-            accessibilityLabel="Answer input"
+            accessibilityLabel="답변 입력"
             value={answer}
             editable={!submitting}
             multiline
-            placeholder="Type your answer"
+            placeholder="답변을 입력하세요"
             placeholderTextColor={theme.colors.foregroundMuted}
             style={styles.input}
             onChangeText={onAnswerChange}
@@ -267,24 +267,24 @@ export function ApprovalRequestBody({
           <View testID="approval-actions" style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Skip"
+              accessibilityLabel="건너뛰기"
               disabled={submitting}
               style={[styles.button, styles.denyButton, submitting && styles.disabled]}
               onPress={() => onRespond({ behavior: "deny" })}
             >
               <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
-                Skip
+                건너뛰기
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Send answer"
+              accessibilityLabel="답변 보내기"
               disabled={submitting || !answerReady}
               style={[styles.button, styles.allowButton, (submitting || !answerReady) && styles.disabled]}
               onPress={() => onRespond({ behavior: "allow", answer: answer.trim() })}
             >
               <Text style={styles.allowText} numberOfLines={1} ellipsizeMode="tail">
-                {submitting ? "Sending" : "Send answer"}
+                {submitting ? "전송 중" : "답변 보내기"}
               </Text>
             </Pressable>
           </View>
@@ -296,7 +296,7 @@ export function ApprovalRequestBody({
               <Pressable
                 key={option.action}
                 accessibilityRole="button"
-                accessibilityLabel={`Choose ${remoteSafeLabel(option.label)}`}
+                accessibilityLabel={`${remoteSafeLabel(option.label)} 선택`}
                 disabled={submitting}
                 style={[styles.option, submitting && styles.disabled]}
                 onPress={() => onRespond({ behavior: "allow", action: option.action })}
@@ -310,13 +310,13 @@ export function ApprovalRequestBody({
           <View testID="approval-actions" style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Deny"
+              accessibilityLabel="거부"
               disabled={submitting}
               style={[styles.button, styles.denyButton, submitting && styles.disabled]}
               onPress={() => onRespond({ behavior: "deny" })}
             >
               <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
-                Cancel
+                취소
               </Text>
             </Pressable>
           </View>
@@ -325,24 +325,24 @@ export function ApprovalRequestBody({
         <View testID="approval-actions" style={styles.actions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Deny"
+            accessibilityLabel="거부"
             disabled={submitting}
             style={[styles.button, styles.denyButton, submitting && styles.disabled]}
             onPress={() => onRespond({ behavior: "deny" })}
           >
             <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
-              Deny
+              거부
             </Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Approve"
+            accessibilityLabel="승인"
             disabled={submitting}
             style={[styles.button, styles.allowButton, submitting && styles.disabled]}
             onPress={() => onRespond({ behavior: "allow" })}
           >
             <Text style={styles.allowText} numberOfLines={1} ellipsizeMode="tail">
-              {submitting ? "Working" : "Approve"}
+              {submitting ? "처리 중" : "승인"}
             </Text>
           </Pressable>
         </View>
@@ -434,7 +434,7 @@ export function useApprovalExchange(
         await submit(response);
       } catch (error) {
         setSubmitting(false);
-        toast.error(error instanceof Error ? error.message : "Failed to send the response to OmO.");
+        toast.error(error instanceof Error ? error.message : "OmO 요청 응답을 전송하지 못했습니다.");
       }
     },
     [submit, toast],
@@ -448,10 +448,10 @@ export function useApprovalExchange(
     statusText: query.isError
       ? query.error instanceof Error
         ? remoteSafeLabel(query.error.message)
-        : "Failed to load OmO requests."
+        : "OmO 요청을 불러오지 못했습니다."
       : query.isPending
-        ? "Checking for pending OmO requests."
-        : "No pending OmO requests.",
+        ? "대기 중인 OmO 요청을 확인하는 중입니다."
+        : "대기 중인 OmO 요청이 없습니다.",
     setAnswer,
     respond,
   };
@@ -484,7 +484,7 @@ export function ApprovalPopup({ agentId, open, onOpenChange, theme, layout }: Ap
 
   const styles = createStyles(theme, layout.compact, Dimensions.get("window").width);
   return (
-    <Modal title="OmO Request" open={open} onOpenChange={onOpenChange}>
+    <Modal title="OmO 요청" open={open} onOpenChange={onOpenChange}>
       <Modal.Content contentContainerStyle={styles.content}>
         <Text
           style={failed ? styles.error : styles.empty}

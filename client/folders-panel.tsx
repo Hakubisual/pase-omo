@@ -91,7 +91,7 @@ export function FoldersPanel(props: PluginWorkspacePanelProps | PluginAgentPanel
         onOpenSession={handleOpenSession}
       />
       {cwd.length === 0 ? (
-        <Text style={styles.hint}>No project path found for this workspace.</Text>
+        <Text style={styles.hint}>이 워크스페이스의 프로젝트 경로를 찾지 못했습니다.</Text>
       ) : null}
     </View>
   );

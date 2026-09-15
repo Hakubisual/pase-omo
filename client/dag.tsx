@@ -36,31 +36,31 @@ import { graphTypography, READABLE_MIN_SCALE } from "./graph-visual.js";
 export function getStatusLabel(status?: string): string {
   switch (status) {
     case "running":
-      return "Running";
+      return "실행 중";
     case "completed":
-      return "Done";
+      return "완료";
     case "failed":
-      return "Failed";
+      return "실패";
     case "error":
-      return "Error";
+      return "오류";
     case "blocked":
-      return "Blocked";
+      return "의존 대기";
     case "scheduled":
-      return "Scheduled";
+      return "배정";
     case "pending":
-      return "Pending";
+      return "대기";
     case "paused":
-      return "Paused";
+      return "일시정지";
     case "cancelled":
-      return "Cancelled";
+      return "취소됨";
     case "skipped":
-      return "Skipped";
+      return "건너뜀";
     case "interrupted":
-      return "Aborted";
+      return "중단";
     case "lost":
-      return "Lost";
+      return "유실";
     default:
-      return status || "Unknown";
+      return status || "미확인";
   }
 }
 
@@ -144,12 +144,12 @@ export function formatDuration(startIso?: string, endIso?: string): string {
   const seconds = totalSec % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
+    return `${hours}시간 ${minutes}분 ${seconds}초`;
   }
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return `${minutes}분 ${seconds}초`;
   }
-  return `${seconds}s`;
+  return `${seconds}초`;
 }
 
 // ============================================================================
@@ -174,15 +174,15 @@ export function emptySessionsCopy(cwd: string): { title: string; description: st
   // it asks for a path instead of reporting that `""` contained nothing.
   if (cwd.trim() === "") {
     return {
-      title: "Enter a project path",
+      title: "프로젝트 경로를 입력하세요",
       description:
-        "Enter the project path where OmO ran, then apply it to see that path's sessions and DAG history.",
+        "위 입력란에 OmO 작업을 실행한 프로젝트 경로를 넣고 적용하면 해당 경로의 세션과 DAG 기록이 표시됩니다.",
     };
   }
 
   return {
-    title: "No OmO sessions found",
-    description: `No OmO workflows or tasks recorded at "${localPathLabel(cwd)}". Run new work and the session and DAG appear automatically.`,
+    title: "발견된 OmO 세션이 없습니다",
+    description: `경로 "${localPathLabel(cwd)}"에 기록된 OmO 워크플로우 또는 태스크가 없습니다. 새 작업을 실행하면 자동으로 세션과 DAG가 표시됩니다.`,
   };
 }
 
@@ -725,7 +725,7 @@ export function SessionSelectorBar({
     >
       <View style={[styles.toolbarHeaderRow, compact && styles.toolbarHeaderRowCompact]}>
         <View style={[styles.toolbarTitleGroup, compact && styles.toolbarTitleGroupCompact]}>
-          <Text style={[styles.toolbarTitle, { color: theme.colors.foreground }]}>OmO Sessions</Text>
+          <Text style={[styles.toolbarTitle, { color: theme.colors.foreground }]}>OmO 세션</Text>
           <Text
             style={[styles.cwdText, { color: theme.colors.foregroundMuted }]}
             numberOfLines={1}
@@ -740,7 +740,7 @@ export function SessionSelectorBar({
             <View style={[styles.scrollNavRow, compact && styles.scrollNavRowCompact]}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Scroll sessions left"
+                accessibilityLabel="세션 목록 왼쪽으로 이동"
                 onPress={() => scrollRef.current?.scrollTo({ x: 0, animated: true })}
                 style={({ pressed }) => [
                   styles.navMiniButton,
@@ -755,7 +755,7 @@ export function SessionSelectorBar({
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Toggle full session list"
+                accessibilityLabel="전체 세션 목록 드롭다운 토글"
                 accessibilityState={{ expanded: showAllDropdown }}
                 onPress={() => setShowAllDropdown((prev) => !prev)}
                 style={({ pressed }) => [
@@ -777,12 +777,12 @@ export function SessionSelectorBar({
                     },
                   ]}
                 >
-                  List ({sessions.length})
+                  목록 ({sessions.length})
                 </Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Scroll sessions right"
+                accessibilityLabel="세션 목록 오른쪽으로 이동"
                 onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 style={({ pressed }) => [
                   styles.navMiniButton,
@@ -800,7 +800,7 @@ export function SessionSelectorBar({
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Refresh sessions and DAG data"
+            accessibilityLabel="세션 및 DAG 데이터 새로고침"
             accessibilityState={{ disabled: isFetching }}
             onPress={onRefresh}
             disabled={isFetching}
@@ -817,7 +817,7 @@ export function SessionSelectorBar({
               <ActivityIndicator size="small" color={theme.colors.accent} />
             ) : (
               <Text style={[styles.refreshButtonText, { color: theme.colors.foreground }]}>
-                ⟳ Refresh
+                ⟳ 새로고침
               </Text>
             )}
           </Pressable>
@@ -836,7 +836,7 @@ export function SessionSelectorBar({
           ]}
         >
           <Text style={[styles.dropdownHeader, { color: theme.colors.foregroundMuted }]}>
-            All sessions ({sessions.length})
+            전체 세션 선택 ({sessions.length}개)
           </Text>
           <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
             {sessions.map((session, index) => {
@@ -845,7 +845,7 @@ export function SessionSelectorBar({
                 <Pressable
                   key={session.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`Select session: ${session.id}`}
+                  accessibilityLabel={`세션 선택: ${session.id}`}
                   accessibilityState={{ selected: isSelected }}
                   onPress={() => {
                     onSelectSession(session.id);
@@ -879,14 +879,14 @@ export function SessionSelectorBar({
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {index === 0 ? "★ [latest] " : ""}{session.id}
+                      {index === 0 ? "★ [최신] " : ""}{session.id}
                     </Text>
                     <Text
                       style={[styles.dropdownItemMeta, { color: theme.colors.foregroundMuted }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      DAG {session.runCount} · tasks {session.taskCount}
+                      DAG {session.runCount} · 태스크 {session.taskCount}
                     </Text>
                   </View>
                   <Text
@@ -920,7 +920,7 @@ export function SessionSelectorBar({
               <Pressable
                 key={session.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Select session: ${session.id}`}
+                accessibilityLabel={`세션 선택: ${session.id}`}
                 accessibilityState={{ selected: isSelected }}
                 onPress={() => onSelectSession(session.id)}
                 style={({ pressed }) => [
@@ -953,7 +953,7 @@ export function SessionSelectorBar({
                           },
                         ]}
                       >
-                        latest
+                        최신
                       </Text>
                     </View>
                   ) : null}
@@ -984,7 +984,7 @@ export function SessionSelectorBar({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {formatKoreanDateTime(session.createdAt)} · DAG {session.runCount} · tasks {session.taskCount}
+                  {formatKoreanDateTime(session.createdAt)} · DAG {session.runCount} · 태스크 {session.taskCount}
                 </Text>
               </Pressable>
             );
@@ -1003,27 +1003,27 @@ export interface SessionStatsBarProps {
 
 export function SessionStatsBar({ stats, theme, compact }: SessionStatsBarProps): React.JSX.Element {
   const items = [
-    { label: "DAG runs", value: stats.totalRuns, color: theme.colors.foreground },
+    { label: "DAG 실행", value: stats.totalRuns, color: theme.colors.foreground },
     {
-      label: "Running",
+      label: "실행 중",
       value: stats.runningRuns + stats.runningTasks,
       color: theme.colors.accent,
     },
     {
-      label: "Done",
+      label: "완료",
       value: stats.completedRuns + stats.completedTasks,
       color: theme.colors.statusSuccess,
     },
     ...(stats.failedRuns > 0 || stats.failedTasks > 0
       ? [
           {
-            label: "Failed/Error",
+            label: "실패/오류",
             value: stats.failedRuns + stats.failedTasks,
             color: theme.colors.statusDanger,
           },
         ]
       : []),
-    { label: "Plain tasks", value: stats.totalTasks, color: theme.colors.foreground },
+    { label: "일반 작업", value: stats.totalTasks, color: theme.colors.foreground },
   ];
 
   return (
@@ -1054,7 +1054,7 @@ export function SessionStatsBar({ stats, theme, compact }: SessionStatsBarProps)
                 styles.statLabel,
                 {
                   color:
-                    item.label === "DAG runs" || item.label === "Plain tasks"
+                    item.label === "DAG 실행" || item.label === "일반 작업"
                       ? theme.colors.foregroundMuted
                       : item.color,
                 },
@@ -1170,7 +1170,7 @@ export function DagRunCard({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Toggle DAG run: ${run.name || run.id}`}
+        accessibilityLabel={`DAG 실행 접기/펼치기: ${run.name || run.id}`}
         accessibilityState={{ expanded: !isFolded }}
         onPress={() => onToggleRunFold(run.id)}
         style={[styles.runCardHeader, compact && styles.runCardHeaderCompact]}
@@ -1201,13 +1201,13 @@ export function DagRunCard({
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            ID: {run.id} · created {formatKoreanDateTime(run.createdAt)} · {completedCount}/{totalNodes} nodes done
-            {failedCount > 0 ? ` · ${failedCount} failed` : ""}
+            ID: {run.id} · 생성 {formatKoreanDateTime(run.createdAt)} · 노드 {completedCount}/{totalNodes} 완료
+            {failedCount > 0 ? ` · 실패 ${failedCount}` : ""}
           </Text>
         </View>
 
         <Text style={[styles.expandToggleGlyph, { color: theme.colors.foregroundMuted }]}>
-          {isFolded ? "▼ Expand" : "▲ Collapse"}
+          {isFolded ? "▼ 펼치기" : "▲ 접기"}
         </Text>
       </Pressable>
 
@@ -1336,7 +1336,7 @@ export function DagRunCard({
                   <Pressable
                     key={item.node.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Select node: ${item.node.label}`}
+                    accessibilityLabel={`노드 선택: ${item.node.label}`}
                     accessibilityState={{ selected: isSelected }}
                     onPress={() => onSelectNode(isSelected ? null : item.node.id)}
                     style={({ pressed }) => [
@@ -1451,24 +1451,24 @@ export function DagRunCard({
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    Node detail: {selectedNode.label}
+                    노드 상세: {selectedNode.label}
                   </Text>
                   <Text
                     style={[styles.nodeIdSub, { color: theme.colors.foregroundMuted }]}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    {selectedNode.id} {selectedNode.attempt > 0 ? `· attempt ${selectedNode.attempt + 1}` : ""}
+                    {selectedNode.id} {selectedNode.attempt > 0 ? `· 시도 ${selectedNode.attempt + 1}` : ""}
                   </Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Close detail"
+                  accessibilityLabel="상세 닫기"
                   onPress={() => onSelectNode(null)}
                   style={styles.inspectorCloseButton}
                 >
                   <Text style={[styles.inspectorCloseText, { color: theme.colors.foregroundMuted }]}>
-                    ✕ Close
+                    ✕ 닫기
                   </Text>
                 </Pressable>
               </View>
@@ -1485,7 +1485,7 @@ export function DagRunCard({
                   ]}
                 >
                   <Text style={[styles.nodeErrorTitle, { color: theme.colors.statusDanger }]}>
-                    Error
+                    오류 발생
                   </Text>
                   <Text style={[styles.nodeErrorText, { color: theme.colors.foreground }]}>
                     {selectedNode.error}
@@ -1497,7 +1497,7 @@ export function DagRunCard({
               {selectedTask?.description ? (
                 <View style={styles.detailItem}>
                   <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                    Description
+                    설명
                   </Text>
                   <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                     {selectedTask.description}
@@ -1509,7 +1509,7 @@ export function DagRunCard({
                 {selectedTask?.agent ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Agent
+                      에이전트
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                       {selectedTask.agent}
@@ -1520,7 +1520,7 @@ export function DagRunCard({
                 {selectedTask?.model ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Model
+                      모델
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                       {selectedTask.model}
@@ -1531,10 +1531,10 @@ export function DagRunCard({
                 {selectedTask?.turns !== undefined ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Turns
+                      턴
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
-                      {selectedTask.turns} turns
+                      {selectedTask.turns}턴
                     </Text>
                   </View>
                 ) : null}
@@ -1542,10 +1542,10 @@ export function DagRunCard({
                 {selectedTask?.toolCalls !== undefined ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Tool calls
+                      도구 호출
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
-                      {selectedTask.toolCalls}
+                      {selectedTask.toolCalls}회
                     </Text>
                   </View>
                 ) : null}
@@ -1553,7 +1553,7 @@ export function DagRunCard({
                 {selectedTask?.startedAt ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Elapsed
+                      경과 시간
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                       {formatDuration(selectedTask.startedAt, selectedTask.completedAt)}
@@ -1564,7 +1564,7 @@ export function DagRunCard({
                 {selectedTask?.startedAt ? (
                   <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                     <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                      Started
+                      시작 시각
                     </Text>
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                       {formatKoreanDateTime(selectedTask.startedAt)}
@@ -1584,7 +1584,7 @@ export function DagRunCard({
                   ]}
                 >
                   <Text style={[styles.liveProgressLabel, { color: theme.colors.accent }]}>
-                    Progress
+                    진행 상황
                   </Text>
                   <Text style={[styles.liveProgressText, { color: theme.colors.foreground }]}>
                     {selectedTask.progress}
@@ -1594,7 +1594,7 @@ export function DagRunCard({
 
               {selectedNode.taskId ? (
                 <Text style={[styles.taskIdFooter, { color: theme.colors.foregroundMuted }]}>
-                  Linked task ID: {selectedNode.taskId}
+                  연결된 태스크 ID: {selectedNode.taskId}
                 </Text>
               ) : null}
 
@@ -1602,7 +1602,7 @@ export function DagRunCard({
               {selectedTaskChildren.length > 0 ? (
                 <View style={styles.childTasksContainer}>
                   <Text style={[styles.childTasksHeader, { color: theme.colors.foregroundMuted }]}>
-                    Subtasks ({selectedTaskChildren.length})
+                    하위 작업 ({selectedTaskChildren.length}개)
                   </Text>
                   {selectedTaskChildren.map((child) => (
                     <TaskItemCard
@@ -1621,7 +1621,7 @@ export function DagRunCard({
             </View>
           ) : (
             <Text style={[styles.graphInstructionText, { color: theme.colors.foregroundMuted }]}>
-              💡 Tap a node to see its details and linked tasks below.
+              💡 노드를 클릭하면 하단에 상세 정보 및 연계 작업 내역이 표시됩니다.
             </Text>
           )}
         </View>
@@ -1674,7 +1674,7 @@ export function TaskItemCard({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Toggle task detail: ${task.description || task.id}`}
+        accessibilityLabel={`작업 상세 토글: ${task.description || task.id}`}
         accessibilityState={{ expanded: isExpanded }}
         onPress={() => onToggleTaskFold(task.id, task.status)}
         style={[styles.taskCardHeader, compact && styles.taskCardHeaderCompact]}
@@ -1739,9 +1739,9 @@ export function TaskItemCard({
           <View style={[styles.detailGrid, compact && styles.detailGridCompact]}>
             {task.turns !== undefined ? (
               <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
-                <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>Turns</Text>
+                <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>턴</Text>
                 <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
-                  {task.turns} turns
+                  {task.turns}턴
                 </Text>
               </View>
             ) : null}
@@ -1749,10 +1749,10 @@ export function TaskItemCard({
             {task.toolCalls !== undefined ? (
               <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                 <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                  Tool calls
+                  도구 호출
                 </Text>
                 <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
-                  {task.toolCalls}
+                  {task.toolCalls}회
                 </Text>
               </View>
             ) : null}
@@ -1760,7 +1760,7 @@ export function TaskItemCard({
             {duration !== "-" ? (
               <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                 <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                  Elapsed
+                  경과 시간
                 </Text>
                 <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                   {duration}
@@ -1771,7 +1771,7 @@ export function TaskItemCard({
             {task.startedAt ? (
               <View style={[styles.detailGridItem, compact && styles.detailGridItemCompact]}>
                 <Text style={[styles.detailLabel, { color: theme.colors.foregroundMuted }]}>
-                  Started
+                  시작 시각
                 </Text>
                 <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                   {formatKoreanDateTime(task.startedAt)}
@@ -1791,7 +1791,7 @@ export function TaskItemCard({
               ]}
             >
               <Text style={[styles.liveProgressLabel, { color: theme.colors.accent }]}>
-                Progress
+                진행 상황
               </Text>
               <Text style={[styles.liveProgressText, { color: theme.colors.foreground }]}>
                 {task.progress}
@@ -1805,7 +1805,7 @@ export function TaskItemCard({
       {children.length > 0 ? (
         <View style={styles.childTasksContainer}>
           <Text style={[styles.childTasksHeader, { color: theme.colors.foregroundMuted }]}>
-            Subtasks ({children.length})
+            하위 작업 ({children.length}개)
           </Text>
           {children.map((child) => (
             <TaskItemCard
@@ -1988,10 +1988,10 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
         >
           <ActivityIndicator size="large" color={theme.colors.accent} />
           <Text style={[styles.stateTitle, { color: theme.colors.foreground }]}>
-            Loading sessions…
+            세션 목록을 조회하는 중입니다...
           </Text>
           <Text style={[styles.stateDesc, { color: theme.colors.foregroundMuted }]}>
-            Scanning the given directory for OmO tasks and DAG history.
+            지정된 디렉토리의 OmO 태스크 및 DAG 기록을 탐색하고 있습니다.
           </Text>
         </View>
       ) : null}
@@ -2030,19 +2030,19 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           ]}
         >
           <Text style={[styles.stateTitle, { color: theme.colors.statusDanger }]}>
-            Could not load sessions
+            세션 목록을 불러올 수 없습니다
           </Text>
           <Text style={[styles.stateDesc, { color: theme.colors.foreground }]}>
-            {String(sessionsQuery.error?.message || "An unknown error occurred.")}
+            {String(sessionsQuery.error?.message || "알 수 없는 오류가 발생했습니다.")}
           </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Reload sessions"
+            accessibilityLabel="세션 목록 다시 불러오기"
             onPress={handleRefresh}
             style={[styles.retryButton, { backgroundColor: theme.colors.accent }]}
           >
             <Text style={[styles.retryButtonText, { color: theme.colors.accentForeground }]}>
-              Retry
+              다시 시도
             </Text>
           </Pressable>
         </View>
@@ -2068,7 +2068,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
             >
               <ActivityIndicator size="large" color={theme.colors.accent} />
               <Text style={[styles.stateTitle, { color: theme.colors.foreground }]}>
-                Loading DAG snapshot…
+                DAG 스냅샷 로딩 중...
               </Text>
             </View>
           ) : null}
@@ -2086,10 +2086,10 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
               ]}
             >
               <Text style={[styles.stateTitle, { color: theme.colors.statusDanger }]}>
-                Snapshot error
+                스냅샷 조회 오류
               </Text>
               <Text style={[styles.stateDesc, { color: theme.colors.foreground }]}>
-                {String(snapshotError?.message || "Could not read the snapshot.")}
+                {String(snapshotError?.message || "스냅샷을 읽을 수 없습니다.")}
               </Text>
             </View>
           ) : null}
@@ -2107,12 +2107,12 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
               ]}
             >
               <Text style={[styles.stateTitle, { color: theme.colors.foreground }]}>
-                No DAG runs or tasks
+                DAG 실행 및 작업 기록 없음
               </Text>
               <Text style={[styles.stateDesc, { color: theme.colors.foregroundMuted }]}>
                 {isAgentScoped
-                  ? "No DAG workflows or tasks in the current agent session."
-                  : `No DAG workflows or tasks in the selected session (${activeSessionId?.slice(0, 12)}…).`}
+                  ? "현재 에이전트 세션에 등록된 DAG 워크플로우나 작업이 없습니다."
+                  : `선택된 세션 (${activeSessionId?.slice(0, 12)}…) 에 등록된 DAG 워크플로우나 작업이 없습니다.`}
               </Text>
             </View>
           ) : null}
@@ -2122,7 +2122,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
             <View style={styles.sectionContainer}>
               <View style={[styles.sectionHeaderRow, compact && styles.sectionHeaderRowCompact]}>
                 <Text style={[styles.sectionTitle, { color: theme.colors.foreground }]}>
-                  Workflow DAG graphs ({snapshot.runs.length})
+                  워크플로우 DAG 그래프 ({snapshot.runs.length})
                 </Text>
               </View>
 
@@ -2150,16 +2150,16 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
             <View style={styles.sectionContainer}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Toggle plain tasks and subtasks"
+                accessibilityLabel="일반 작업 및 서브태스크 목록 접기/펼치기"
                 accessibilityState={{ expanded: !tasksSectionFolded }}
                 onPress={() => setTasksSectionFolded((prev) => !prev)}
                 style={[styles.sectionHeaderRow, compact && styles.sectionHeaderRowCompact]}
               >
                 <Text style={[styles.sectionTitle, { color: theme.colors.foreground }]}>
-                  Plain tasks / subtasks ({standaloneRootTasks.length})
+                  일반 작업 / 서브태스크 ({standaloneRootTasks.length})
                 </Text>
                 <Text style={[styles.expandToggleGlyph, { color: theme.colors.foregroundMuted }]}>
-                  {tasksSectionFolded ? "▼ Expand" : "▲ Collapse"}
+                  {tasksSectionFolded ? "▼ 펼치기" : "▲ 접기"}
                 </Text>
               </Pressable>
 
@@ -2286,7 +2286,7 @@ export function DagGlobalSurface({
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          Project path:
+          프로젝트 경로:
         </Text>
         <TextInput
           style={[
@@ -2301,14 +2301,14 @@ export function DagGlobalSurface({
           value={inputPath}
           onChangeText={setInputPath}
           onSubmitEditing={handleApplyPath}
-          placeholder="Daemon project path"
+          placeholder="데몬의 프로젝트 경로"
           placeholderTextColor={theme.colors.foregroundMuted}
           autoCapitalize="none"
           autoCorrect={false}
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Look up sessions by project path"
+          accessibilityLabel="프로젝트 경로로 세션 조회"
           onPress={handleApplyPath}
           style={({ pressed }) => [
             styles.globalPathButton,
@@ -2320,7 +2320,7 @@ export function DagGlobalSurface({
           ]}
         >
           <Text style={[styles.globalPathButtonText, { color: theme.colors.accentForeground }]}>
-            Look up
+            조회
           </Text>
         </Pressable>
       </View>
@@ -2334,7 +2334,7 @@ export function DagGlobalSurface({
               <Pressable
                 key={project.cwd}
                 accessibilityRole="button"
-                accessibilityLabel={`Select project: ${project.cwd}`}
+                accessibilityLabel={`프로젝트 선택: ${project.cwd}`}
                 onPress={() => handlePickProject(project.cwd)}
                 style={({ pressed }) => [
                   styles.globalProjectChip,
@@ -2361,7 +2361,7 @@ export function DagGlobalSurface({
           {hiddenProjectCount > 0 || projectsExpanded ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={projectsExpanded ? "Collapse project list" : `Show ${hiddenProjectCount} more projects`}
+              accessibilityLabel={projectsExpanded ? "프로젝트 목록 접기" : `프로젝트 더 보기 ${hiddenProjectCount}개`}
               onPress={() => setProjectsExpanded(!projectsExpanded)}
               style={({ pressed }) => [
                 styles.globalProjectChip,
@@ -2373,7 +2373,7 @@ export function DagGlobalSurface({
               ]}
             >
               <Text style={[styles.globalProjectChipText, { color: theme.colors.foregroundMuted }]}>
-                {projectsExpanded ? "Collapse" : `+${hiddenProjectCount}`}
+                {projectsExpanded ? "접기" : `+${hiddenProjectCount}`}
               </Text>
             </Pressable>
           ) : null}

@@ -22,8 +22,8 @@ const COALESCE_MS = 250;
  * OmO stopped to ask something.
  */
 export function approvalPillLabel(pending: number): string {
-  if (pending <= 0) return "Approvals";
-  return pending === 1 ? "Needs reply" : `Needs reply ${pending}`;
+  if (pending <= 0) return "승인";
+  return pending === 1 ? "응답 필요" : `응답 필요 ${pending}`;
 }
 
 /**
@@ -103,7 +103,7 @@ export function contributeApprovalPill(client: PluginClientContext): () => void 
             workspaceId,
             agentId: agent.id,
             button: {
-              title: "OmO Approvals",
+              title: "OmO 승인",
               icon: "ShieldCheck",
               label: approvalPillLabel(0),
               behavior: { kind: "popover", Content: ApprovalPillPopover },
