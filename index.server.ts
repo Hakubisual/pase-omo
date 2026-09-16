@@ -3,13 +3,14 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 
 import { activeRuns } from "./server/chat/active.js";
 import { agentDagSnapshot, createPublisher } from "./server/chat/publisher.js";
-import { getSnapshot, listSessions } from "./server/dag/dag.js";
+import { getSnapshot, listSessions, locateDag } from "./server/dag/dag.js";
 import { listProjects } from "./server/dag/projects.js";
 import { registerApprovalHandlers } from "./server/provider/approval.js";
 import { createOmoProvider } from "./server/provider/provider.js";
 import { registerUpdateHandlers } from "./server/provider/update.js";
 import { registerWorkerHandlers } from "./server/workers/workers.js";
 import { getSnapshotRpc, listProjectsRpc, listSessionsRpc } from "./shared/dag.js";
+import { locateDagRpc } from "./shared/navigate.js";
 import { activeRunsRpc, agentDagSnapshotRpc } from "./shared/row.js";
 
 /**
@@ -55,6 +56,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // which is what keeps it from listing every session in the project.
   server.handle(agentDagSnapshotRpc, agentDagSnapshot);
   server.handle(listProjectsRpc, listProjects);
+  // "Open in OmO DAG" sends an agent, a run or a task; the daemon answers with
+  // the top-level session that owns it so the panel never has to guess.
+  server.handle(locateDagRpc, locateDag);
 
   // The approval RPCs reach the live OmoSession through a registry each session
   // joins on construction, which is why they are registered here next to the
