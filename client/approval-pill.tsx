@@ -35,8 +35,11 @@ export function ApprovalPillPopover(props: PluginButtonContentProps): React.JSX.
   const { theme, layout, close } = props;
   const agentId = props.context === "agent" ? props.agentId : null;
   const onResolved = useCallback(() => close(), [close]);
-  const { request, answer, submitting, expanded, failed, statusText, setAnswer, toggleExpanded, respond } =
-    useApprovalExchange(agentId, true, onResolved);
+  const { request, answer, submitting, failed, statusText, setAnswer, respond } = useApprovalExchange(
+    agentId,
+    true,
+    onResolved,
+  );
 
   const { height: windowHeight } = useWindowDimensions();
   const styles = useMemo(
@@ -61,8 +64,6 @@ export function ApprovalPillPopover(props: PluginButtonContentProps): React.JSX.
             request,
             answer,
             submitting,
-            expanded,
-            onToggleExpanded: toggleExpanded,
             theme,
             layout,
             onAnswerChange: setAnswer,

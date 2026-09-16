@@ -243,10 +243,6 @@ export interface ApprovalRequestModalProps {
   submitting: boolean;
   theme: PluginTheme;
   layout: PluginHostProps["layout"];
-  /** Request text and option labels are shown in full rather than clipped. */
-  expanded?: boolean;
-  /** Omitted where nothing owns the expansion state; the toggle is then hidden. */
-  onToggleExpanded?: () => void;
   /** Opens the conversation this request came from. Absent on hosts without navigation. */
   onViewInSession?: () => void;
   onAnswerChange(value: string): void;
@@ -270,8 +266,6 @@ export function ApprovalRequestBody({
   submitting,
   theme,
   layout,
-  expanded = false,
-  onToggleExpanded,
   onViewInSession,
   onAnswerChange,
   onRespond,
@@ -279,10 +273,9 @@ export function ApprovalRequestBody({
   const styles = createStyles(theme, layout.compact, Dimensions.get("window").width);
   const answerReady = answer.trim().length > 0;
   const displayTitle = remoteSafeLabel(request.title);
-  // Clipping is the default because a request is usually short; expanding is one
-  // press away and keeps the typed answer, which lives above this component.
-  const titleLines = expanded ? undefined : layout.compact ? 3 : 4;
-  const optionLines = expanded ? undefined : 2;
+  // Nothing is clipped: the request and its options own a scroller of their own
+  // and the answer controls sit outside it, so a long question costs scrolling
+  // rather than the tail of the sentence you have to answer.
 
   const option = (entry: { action: string; label: string }): React.JSX.Element => (
     <Pressable
@@ -293,9 +286,7 @@ export function ApprovalRequestBody({
       style={[styles.option, submitting && styles.disabled]}
       onPress={() => onRespond({ behavior: "allow", action: entry.action })}
     >
-      <Text style={styles.optionText} numberOfLines={optionLines} ellipsizeMode="tail">
-        {remoteSafeLabel(entry.label)}
-      </Text>
+      <Text style={styles.optionText}>{remoteSafeLabel(entry.label)}</Text>
     </Pressable>
   );
 
@@ -307,9 +298,7 @@ export function ApprovalRequestBody({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title} numberOfLines={titleLines} ellipsizeMode="tail">
-          {displayTitle}
-        </Text>
+        <Text style={styles.title}>{displayTitle}</Text>
 
         {request.method === "question" ? (
           <>
@@ -337,21 +326,8 @@ export function ApprovalRequestBody({
         ) : null}
       </ScrollView>
 
-      {onToggleExpanded === undefined && onViewInSession === undefined ? null : (
+      {onViewInSession === undefined ? null : (
         <View testID="approval-secondary" style={styles.secondaryRow}>
-          {onToggleExpanded === undefined ? null : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={expanded ? "접기" : "전문 보기"}
-              accessibilityState={{ expanded }}
-              style={styles.secondaryButton}
-              onPress={onToggleExpanded}
-            >
-              <Text style={styles.secondaryText} numberOfLines={1} ellipsizeMode="tail">
-                {expanded ? "접기" : "전문 보기"}
-              </Text>
-            </Pressable>
-          )}
           {onViewInSession === undefined ? null : (
             <Pressable
               accessibilityRole="button"
@@ -471,10 +447,7 @@ export interface ApprovalExchange {
   /** What to say when there is no request to show. */
   statusText: string;
   failed: boolean;
-  /** Whether the request text and its options are shown in full. */
-  expanded: boolean;
   setAnswer(value: string): void;
-  toggleExpanded(): void;
   respond(response: ApprovalResponse): Promise<void>;
 }
 
@@ -497,17 +470,11 @@ export function useApprovalExchange(
   const request = query.data?.requests[0];
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setAnswer("");
     setSubmitting(false);
-    setExpanded(false);
   }, [active, request?.id]);
-
-  // Expanding is a view change, so it must not disturb a half-typed answer:
-  // the answer lives here, above the component that draws the toggle.
-  const toggleExpanded = useCallback(() => setExpanded((previous) => !previous), []);
 
   const submit = useMemo(
     () =>
@@ -543,8 +510,6 @@ export function useApprovalExchange(
     request,
     answer,
     submitting,
-    expanded,
-    toggleExpanded,
     failed: query.isError,
     statusText: query.isError
       ? query.error instanceof Error
@@ -568,8 +533,11 @@ export function ApprovalPopup({
   onViewInSession,
 }: ApprovalPopupProps): React.JSX.Element {
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-  const { request, answer, submitting, expanded, failed, statusText, setAnswer, toggleExpanded, respond } =
-    useApprovalExchange(agentId, open, close);
+  const { request, answer, submitting, failed, statusText, setAnswer, respond } = useApprovalExchange(
+    agentId,
+    open,
+    close,
+  );
 
   if (request) {
     return (
@@ -578,8 +546,6 @@ export function ApprovalPopup({
         request={request}
         answer={answer}
         submitting={submitting}
-        expanded={expanded}
-        onToggleExpanded={toggleExpanded}
         {...(onViewInSession === undefined ? {} : { onViewInSession })}
         theme={theme}
         layout={layout}
