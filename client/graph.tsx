@@ -6,6 +6,7 @@ import type { DagRunNode, DagTask } from "../shared/dag";
 import { agentDagSnapshotRpc, type DagRow } from "../shared/row";
 import { formatDuration, formatKoreanDateTime } from "./dag";
 import { COMPACT_GRAPH_METRICS, DEFAULT_GRAPH_METRICS, layoutGraph, type GraphNode } from "./graph-layout";
+import { OpenInDagButton } from "./open-in-dag";
 import {
   edgeVisual,
   fitsStateLine,
@@ -434,12 +435,15 @@ export function DagGraph({
   theme,
   compact,
   agentId,
+  navigable = false,
 }: {
   row: DagRow;
   theme: PluginTheme;
   compact: boolean;
   /** Unlocks the run-record fields of the inspector; the graph draws without it. */
   agentId?: string | undefined;
+  /** Draws "Open in OmO DAG" for this run. Needs an agent to resolve its owner. */
+  navigable?: boolean;
 }) {
   const styles = useMemo(() => createStyles(theme, compact), [theme, compact]);
   const metrics = compact ? COMPACT_GRAPH_METRICS : DEFAULT_GRAPH_METRICS;
@@ -498,6 +502,10 @@ export function DagGraph({
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${percent}%` as ViewStyle["width"], backgroundColor: barColor }]} />
       </View>
+
+      {navigable && agentId !== undefined ? (
+        <OpenInDagButton request={{ agentId, runId: row.runId }} theme={theme} compact={compact} />
+      ) : null}
 
       {layout.nodes.length === 0 ? (
         <Text style={styles.empty}>No nodes to show</Text>
