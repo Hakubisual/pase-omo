@@ -14,16 +14,16 @@ const theme = {
 
 const row = {
   tag: "omo-senpi-task",
-  badge: "Task",
+  badge: "작업",
   summary: "Background task results are automatically delivered: an idle session is always woken.",
 };
 
 it("keeps the usage-bar copy and lets desktop text wrap without a line bound", () => {
   const model = wrapCardModel(row, theme);
-  expect(model.badge).toBe("Task");
+  expect(model.badge).toBe("작업");
   expect(model.summary).toBe(row.summary);
   expect(model.summaryLines).toBeNull();
-  expect(model.accessibilityLabel).toBe(`Task, ${row.summary}`);
+  expect(model.accessibilityLabel).toBe(`작업, ${row.summary}`);
 });
 
 it("line-bounds the summary on the phone so a long wrap cannot overflow", () => {

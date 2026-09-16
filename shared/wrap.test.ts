@@ -72,12 +72,12 @@ it("replaces a prompt that is only harness XML with wrap rows", () => {
     version: WRAP_ROW_VERSION,
     data: {
       tag: "omo-senpi-task",
-      badge: "Task",
+      badge: "작업",
       summary:
         "Background task results are automatically delivered: an idle session is always woken, and a running turn receives them at its next tool boundary.",
     },
   });
-  expect(WrapRowSchema.parse(result?.items[0]?.data).badge).toBe("Task");
+  expect(WrapRowSchema.parse(result?.items[0]?.data).badge).toBe("작업");
 });
 
 it("gives each of several pure wraps its own id off the source", () => {
@@ -86,10 +86,12 @@ it("gives each of several pure wraps its own id off the source", () => {
     text: `${TASK}\n<memory_notice>\n- 5 previous messages\n</memory_notice>`,
   });
   expect(result?.items.map((item) => item.id)).toEqual(["user-1-wrap-0", "user-1-wrap-1"]);
-  expect(result?.items[1]?.data.badge).toBe("Memory");
+  expect(result?.items[1]?.data.badge).toBe("메모리");
 });
 
 it("titles unknown omo- tags from the last path segment", () => {
+  // Derived from the tag itself, so an unknown tag keeps its own wording rather
+  // than borrowing a translated badge.
   expect(badgeFor("omo-fallback-architect:notice")).toBe("Notice");
 });
 
@@ -105,7 +107,7 @@ it("wraps a timestamp as a Time bar and unwraps user_query so the real prompt re
 <user_query>continue</user_query>`);
   expect(split.wraps).toEqual([{ tag: "timestamp", body: "Tuesday, Sep 15, 2026, 8:01 AM (UTC)" }]);
   expect(split.remaining).toBe("continue");
-  expect(badgeFor("timestamp")).toBe("Time");
+  expect(badgeFor("timestamp")).toBe("시각");
 });
 
 it("unwraps user_query so a nested memory notice still becomes a Memory bar", () => {
@@ -130,7 +132,7 @@ it("wraps a System Error compaction line as an Error bar", () => {
   ]);
   expect(toWrapRow(split.wraps[0]!)).toEqual({
     tag: "system-error",
-    badge: "Error",
+    badge: "오류",
     summary: "Context remains above the compaction threshold because compaction did not complete",
   });
 });
@@ -153,7 +155,7 @@ it("replaces a System Error timeline item with an Error wrap", () => {
       id: "err-1",
       kind: WRAP_ROW_KIND,
       version: WRAP_ROW_VERSION,
-      data: { tag: "system-error", badge: "Error", summary: COMPACTION },
+      data: { tag: "system-error", badge: "오류", summary: COMPACTION },
     },
   ]);
 });
@@ -171,7 +173,7 @@ Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimeline
   expect(split.wraps.map((wrap) => wrap.tag)).toEqual(["timestamp", "recalled-memory"]);
   expect(toWrapRow(split.wraps[1]!)).toEqual({
     tag: "recalled-memory",
-    badge: "Memory",
+    badge: "메모리",
     summary:
       "Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimelineItems); the client wrapPluginItems converter only falls back for pure harness XML, since it replaces whole items.",
   });
