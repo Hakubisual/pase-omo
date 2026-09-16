@@ -4,11 +4,12 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import { useCallback, useMemo } from "react";
-import { ScrollView, Text } from "react-native";
+import { Text, useWindowDimensions, View } from "react-native";
 
 import { listPendingApprovalsRpc } from "../shared/approval.js";
 import { ApprovalRequestBody, useApprovalExchange } from "./approval.js";
 import { isOmoAgent, listedAgents } from "./dag-pill.js";
+import { POPOVER_BOTTOM_INSET, popoverMaxHeight } from "./popover-layout.js";
 
 /** Matches the DAG pill: coalesce the burst of agent updates into one refresh. */
 const COALESCE_MS = 250;
@@ -34,34 +35,41 @@ export function ApprovalPillPopover(props: PluginButtonContentProps): React.JSX.
   const { theme, layout, close } = props;
   const agentId = props.context === "agent" ? props.agentId : null;
   const onResolved = useCallback(() => close(), [close]);
-  const { request, answer, submitting, failed, statusText, setAnswer, respond } = useApprovalExchange(
-    agentId,
-    true,
-    onResolved,
-  );
+  const { request, answer, submitting, expanded, failed, statusText, setAnswer, toggleExpanded, respond } =
+    useApprovalExchange(agentId, true, onResolved);
 
+  const { height: windowHeight } = useWindowDimensions();
   const styles = useMemo(
     () => ({
-      screen: { padding: layout.compact ? 12 : 16, gap: 10, maxHeight: layout.compact ? 420 : 520 },
+      // The popover bounds the sheet; the body shrinks inside it and scrolls its
+      // own text, which is what keeps the answer controls above the fold.
+      screen: {
+        padding: layout.compact ? 12 : 16,
+        paddingBottom: (layout.compact ? 12 : 16) + POPOVER_BOTTOM_INSET,
+        gap: 10,
+        maxHeight: popoverMaxHeight(layout.compact, windowHeight),
+      },
       status: { color: failed ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 13 },
     }),
-    [failed, theme, layout.compact],
+    [failed, theme, layout.compact, windowHeight],
   );
 
   return (
-    <ScrollView style={{ maxHeight: styles.screen.maxHeight }} contentContainerStyle={styles.screen}>
+    <View style={styles.screen}>
       {request
         ? ApprovalRequestBody({
             request,
             answer,
             submitting,
+            expanded,
+            onToggleExpanded: toggleExpanded,
             theme,
             layout,
             onAnswerChange: setAnswer,
             onRespond: respond,
           })
         : <Text style={styles.status}>{statusText}</Text>}
-    </ScrollView>
+    </View>
   );
 }
 

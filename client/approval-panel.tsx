@@ -44,9 +44,11 @@ function createStyles(theme: PluginTheme, compact: boolean) {
  * panel is that something, and it opens itself the moment a request appears so
  * a prompt is never missed on a phone where no pill is visible.
  */
-export function ApprovalPanel({ agentId, theme, layout }: PluginAgentPanelProps) {
+export function ApprovalPanel({ agentId, theme, layout, navigation }: PluginAgentPanelProps) {
   const compact = layout.compact;
   const styles = useMemo(() => createStyles(theme, compact), [theme, compact]);
+  // Older hosts expose no navigation, and the "View in session" affordance is
+  // hidden rather than dead when they do not.
   const pending = useHasPendingApproval(agentId);
   const [open, setOpen] = useState(false);
 
@@ -75,7 +77,16 @@ export function ApprovalPanel({ agentId, theme, layout }: PluginAgentPanelProps)
         </Text>
       </Pressable>
 
-      <ApprovalPopup agentId={agentId} open={open} onOpenChange={setOpen} theme={theme} layout={layout} />
+      <ApprovalPopup
+        agentId={agentId}
+        open={open}
+        onOpenChange={setOpen}
+        theme={theme}
+        layout={layout}
+        {...(navigation === undefined
+          ? {}
+          : { onViewInSession: () => navigation.openAgent({ agentId }) })}
+      />
     </View>
   );
 }

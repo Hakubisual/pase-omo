@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc, type PluginHostProps } from "@getpaseo/plugin/client";
-import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
+import { Modal, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
@@ -93,8 +93,15 @@ export function remoteSafeLabel(value: string): string {
 function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: number) {
   const maxWidth = Math.min(viewportWidth, compact ? 390 : 640);
   return StyleSheet.create({
-    content: { width: "100%", maxWidth, alignSelf: "center", overflow: "hidden" },
-    body: { width: "100%", maxWidth, alignSelf: "center", overflow: "hidden", gap: compact ? 12 : 16 },
+    content: { width: "100%", maxWidth, alignSelf: "center", overflow: "hidden", flexShrink: 1 },
+    body: {
+      width: "100%",
+      maxWidth,
+      alignSelf: "center",
+      overflow: "hidden",
+      flexShrink: 1,
+      gap: compact ? 12 : 16,
+    },
     title: {
       maxWidth: "100%",
       flexShrink: 1,
@@ -109,6 +116,38 @@ function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: numbe
       color: theme.colors.foregroundMuted,
       fontSize: 13,
       lineHeight: 19,
+    },
+    // The request text and its options scroll; the actions below do not, which
+    // is what keeps the send button on screen no matter how long the request is
+    // or how much of the screen the keyboard takes.
+    scroll: { width: "100%", maxWidth: "100%", flexShrink: 1 },
+    scrollContent: { width: "100%", maxWidth: "100%", gap: compact ? 12 : 16, paddingBottom: 4 },
+    secondaryRow: {
+      width: "100%",
+      maxWidth: "100%",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    secondaryButton: {
+      minHeight: 44,
+      flexGrow: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderRadius: 8,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface1,
+    },
+    secondaryText: {
+      maxWidth: "100%",
+      flexShrink: 1,
+      color: theme.colors.foregroundMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: "600",
+      textAlign: "center",
     },
     optionList: { width: "100%", maxWidth: "100%", gap: 8 },
     option: {
@@ -204,6 +243,12 @@ export interface ApprovalRequestModalProps {
   submitting: boolean;
   theme: PluginTheme;
   layout: PluginHostProps["layout"];
+  /** Request text and option labels are shown in full rather than clipped. */
+  expanded?: boolean;
+  /** Omitted where nothing owns the expansion state; the toggle is then hidden. */
+  onToggleExpanded?: () => void;
+  /** Opens the conversation this request came from. Absent on hosts without navigation. */
+  onViewInSession?: () => void;
   onAnswerChange(value: string): void;
   onOpenChange(open: boolean): void;
   onRespond(response: ApprovalResponse): void | Promise<unknown>;
@@ -225,109 +270,142 @@ export function ApprovalRequestBody({
   submitting,
   theme,
   layout,
+  expanded = false,
+  onToggleExpanded,
+  onViewInSession,
   onAnswerChange,
   onRespond,
 }: ApprovalRequestBodyProps): React.JSX.Element {
   const styles = createStyles(theme, layout.compact, Dimensions.get("window").width);
   const answerReady = answer.trim().length > 0;
   const displayTitle = remoteSafeLabel(request.title);
+  // Clipping is the default because a request is usually short; expanding is one
+  // press away and keeps the typed answer, which lives above this component.
+  const titleLines = expanded ? undefined : layout.compact ? 3 : 4;
+  const optionLines = expanded ? undefined : 2;
+
+  const option = (entry: { action: string; label: string }): React.JSX.Element => (
+    <Pressable
+      key={entry.action}
+      accessibilityRole="button"
+      accessibilityLabel={`Choose ${remoteSafeLabel(entry.label)}`}
+      disabled={submitting}
+      style={[styles.option, submitting && styles.disabled]}
+      onPress={() => onRespond({ behavior: "allow", action: entry.action })}
+    >
+      <Text style={styles.optionText} numberOfLines={optionLines} ellipsizeMode="tail">
+        {remoteSafeLabel(entry.label)}
+      </Text>
+    </Pressable>
+  );
 
   return (
     <View testID="approval-body" style={styles.body}>
-      <Text style={styles.title} numberOfLines={layout.compact ? 3 : 4} ellipsizeMode="tail">
-        {displayTitle}
-      </Text>
+      <ScrollView
+        testID="approval-scroll"
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title} numberOfLines={titleLines} ellipsizeMode="tail">
+          {displayTitle}
+        </Text>
+
+        {request.method === "question" ? (
+          <>
+            {request.options.length > 0 ? (
+              <View style={styles.optionList}>
+                <Text style={styles.hint} numberOfLines={1} ellipsizeMode="tail">
+                  Suggested answers
+                </Text>
+                {request.options.map(option)}
+              </View>
+            ) : null}
+            <TextInput
+              accessibilityLabel="Answer input"
+              value={answer}
+              editable={!submitting}
+              multiline
+              placeholder="Type your answer"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              style={styles.input}
+              onChangeText={onAnswerChange}
+            />
+          </>
+        ) : request.method === "select" ? (
+          <View style={styles.optionList}>{request.options.map(option)}</View>
+        ) : null}
+      </ScrollView>
+
+      {onToggleExpanded === undefined && onViewInSession === undefined ? null : (
+        <View testID="approval-secondary" style={styles.secondaryRow}>
+          {onToggleExpanded === undefined ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={expanded ? "Show less" : "Show full text"}
+              accessibilityState={{ expanded }}
+              style={styles.secondaryButton}
+              onPress={onToggleExpanded}
+            >
+              <Text style={styles.secondaryText} numberOfLines={1} ellipsizeMode="tail">
+                {expanded ? "Show less" : "Show full text"}
+              </Text>
+            </Pressable>
+          )}
+          {onViewInSession === undefined ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View in session"
+              style={styles.secondaryButton}
+              onPress={onViewInSession}
+            >
+              <Text style={styles.secondaryText} numberOfLines={1} ellipsizeMode="tail">
+                View in session
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {request.method === "question" ? (
-        <>
-          {request.options.length > 0 ? (
-            <View style={styles.optionList}>
-              <Text style={styles.hint} numberOfLines={1} ellipsizeMode="tail">
-                추천 답변
-              </Text>
-              {request.options.map((option) => (
-                <Pressable
-                  key={option.action}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${remoteSafeLabel(option.label)} 선택`}
-                  disabled={submitting}
-                  style={[styles.option, submitting && styles.disabled]}
-                  onPress={() => onRespond({ behavior: "allow", action: option.action })}
-                >
-                  <Text style={styles.optionText} numberOfLines={2} ellipsizeMode="tail">
-                    {remoteSafeLabel(option.label)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          <TextInput
-            accessibilityLabel="답변 입력"
-            value={answer}
-            editable={!submitting}
-            multiline
-            placeholder="답변을 입력하세요"
-            placeholderTextColor={theme.colors.foregroundMuted}
-            style={styles.input}
-            onChangeText={onAnswerChange}
-          />
-          <View testID="approval-actions" style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="건너뛰기"
-              disabled={submitting}
-              style={[styles.button, styles.denyButton, submitting && styles.disabled]}
-              onPress={() => onRespond({ behavior: "deny" })}
-            >
-              <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
-                건너뛰기
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="답변 보내기"
-              disabled={submitting || !answerReady}
-              style={[styles.button, styles.allowButton, (submitting || !answerReady) && styles.disabled]}
-              onPress={() => onRespond({ behavior: "allow", answer: answer.trim() })}
-            >
-              <Text style={styles.allowText} numberOfLines={1} ellipsizeMode="tail">
-                {submitting ? "전송 중" : "답변 보내기"}
-              </Text>
-            </Pressable>
-          </View>
-        </>
+        <View testID="approval-actions" style={styles.actions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="건너뛰기"
+            disabled={submitting}
+            style={[styles.button, styles.denyButton, submitting && styles.disabled]}
+            onPress={() => onRespond({ behavior: "deny" })}
+          >
+            <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
+              건너뛰기
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="답변 보내기"
+            disabled={submitting || !answerReady}
+            style={[styles.button, styles.allowButton, (submitting || !answerReady) && styles.disabled]}
+            onPress={() => onRespond({ behavior: "allow", answer: answer.trim() })}
+          >
+            <Text style={styles.allowText} numberOfLines={1} ellipsizeMode="tail">
+              {submitting ? "전송 중" : "답변 보내기"}
+            </Text>
+          </Pressable>
+        </View>
       ) : request.method === "select" ? (
-        <>
-          <View style={styles.optionList}>
-            {request.options.map((option) => (
-              <Pressable
-                key={option.action}
-                accessibilityRole="button"
-                accessibilityLabel={`${remoteSafeLabel(option.label)} 선택`}
-                disabled={submitting}
-                style={[styles.option, submitting && styles.disabled]}
-                onPress={() => onRespond({ behavior: "allow", action: option.action })}
-              >
-                <Text style={styles.optionText} numberOfLines={2} ellipsizeMode="tail">
-                  {remoteSafeLabel(option.label)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View testID="approval-actions" style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="거부"
-              disabled={submitting}
-              style={[styles.button, styles.denyButton, submitting && styles.disabled]}
-              onPress={() => onRespond({ behavior: "deny" })}
-            >
-              <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
-                취소
-              </Text>
-            </Pressable>
-          </View>
-        </>
+        <View testID="approval-actions" style={styles.actions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="거부"
+            disabled={submitting}
+            style={[styles.button, styles.denyButton, submitting && styles.disabled]}
+            onPress={() => onRespond({ behavior: "deny" })}
+          >
+            <Text style={styles.denyText} numberOfLines={1} ellipsizeMode="tail">
+              취소
+            </Text>
+          </Pressable>
+        </View>
       ) : (
         <View testID="approval-actions" style={styles.actions}>
           <Pressable
@@ -368,7 +446,10 @@ export function ApprovalRequestModal({
 
   return (
     <Modal title={modalTitle(body.request.method)} open={open} onOpenChange={onOpenChange}>
-      <Modal.Content contentContainerStyle={styles.content}>{ApprovalRequestBody(body)}</Modal.Content>
+      {/* The body owns its own scrolling so the actions can stay outside it. */}
+      <Modal.Content scrollable={false} contentContainerStyle={styles.content}>
+        {ApprovalRequestBody(body)}
+      </Modal.Content>
     </Modal>
   );
 }
@@ -379,6 +460,8 @@ export interface ApprovalPopupProps {
   onOpenChange(open: boolean): void;
   theme: PluginTheme;
   layout: PluginHostProps["layout"];
+  /** Opens the conversation the request came from; omitted on hosts without navigation. */
+  onViewInSession?: () => void;
 }
 
 export interface ApprovalExchange {
@@ -388,7 +471,10 @@ export interface ApprovalExchange {
   /** What to say when there is no request to show. */
   statusText: string;
   failed: boolean;
+  /** Whether the request text and its options are shown in full. */
+  expanded: boolean;
   setAnswer(value: string): void;
+  toggleExpanded(): void;
   respond(response: ApprovalResponse): Promise<void>;
 }
 
@@ -411,11 +497,17 @@ export function useApprovalExchange(
   const request = query.data?.requests[0];
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setAnswer("");
     setSubmitting(false);
+    setExpanded(false);
   }, [active, request?.id]);
+
+  // Expanding is a view change, so it must not disturb a half-typed answer:
+  // the answer lives here, above the component that draws the toggle.
+  const toggleExpanded = useCallback(() => setExpanded((previous) => !previous), []);
 
   const submit = useMemo(
     () =>
@@ -451,6 +543,8 @@ export function useApprovalExchange(
     request,
     answer,
     submitting,
+    expanded,
+    toggleExpanded,
     failed: query.isError,
     statusText: query.isError
       ? query.error instanceof Error
@@ -465,13 +559,17 @@ export function useApprovalExchange(
 }
 
 /** RPC-connected popup intended for entry-point contribution wiring. */
-export function ApprovalPopup({ agentId, open, onOpenChange, theme, layout }: ApprovalPopupProps): React.JSX.Element {
+export function ApprovalPopup({
+  agentId,
+  open,
+  onOpenChange,
+  theme,
+  layout,
+  onViewInSession,
+}: ApprovalPopupProps): React.JSX.Element {
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
-  const { request, answer, submitting, failed, statusText, setAnswer, respond } = useApprovalExchange(
-    agentId,
-    open,
-    close,
-  );
+  const { request, answer, submitting, expanded, failed, statusText, setAnswer, toggleExpanded, respond } =
+    useApprovalExchange(agentId, open, close);
 
   if (request) {
     return (
@@ -480,6 +578,9 @@ export function ApprovalPopup({ agentId, open, onOpenChange, theme, layout }: Ap
         request={request}
         answer={answer}
         submitting={submitting}
+        expanded={expanded}
+        onToggleExpanded={toggleExpanded}
+        {...(onViewInSession === undefined ? {} : { onViewInSession })}
         theme={theme}
         layout={layout}
         onAnswerChange={setAnswer}
