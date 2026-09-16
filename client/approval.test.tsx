@@ -304,4 +304,98 @@ describe("ApprovalRequestModal", () => {
       if (typeof style.maxWidth === "number") expect(style.maxWidth).toBeLessThanOrEqual(390);
     }
   });
+
+  it("keeps the response controls outside the part that scrolls", () => {
+    vi.spyOn(Dimensions, "get").mockReturnValue({ width: 390, height: 844, scale: 1, fontScale: 1 });
+    const tree = ApprovalRequestModal({
+      open: true,
+      request: request({
+        id: "question-scroll",
+        method: "question",
+        title: "A request long enough that reading it fills a phone screen",
+        options: [{ action: "option-0", label: "Use the nearest region" }],
+      }),
+      answer: "seoul",
+      submitting: false,
+      theme,
+      layout: { compact: true, platform: "ios" },
+      onAnswerChange: vi.fn(),
+      onOpenChange: vi.fn(),
+      onRespond: vi.fn(),
+    });
+
+    // The reported bug: the request and its options pushed "Send answer" past
+    // the bottom edge. Only the text scrolls now, so the actions cannot move.
+    const scroll = byTestId(tree, "approval-scroll");
+    const scrolled = descendants(scroll.props.children).map((element) => element.props.testID);
+    expect(scrolled).not.toContain("approval-actions");
+    expect(control(tree, "Send answer")).toBeDefined();
+    expect(control(scroll, "Answer input")).toBeDefined();
+  });
+
+  it("shows the request and its options in full once expanded, without touching the answer", () => {
+    const title = "Pick the deployment destination for this very long mobile release request";
+    const label = "Production in Asia Pacific Northeast with automatic failover enabled";
+    const onToggleExpanded = vi.fn();
+    const onAnswerChange = vi.fn();
+    const render = (expanded: boolean) =>
+      ApprovalRequestModal({
+        open: true,
+        request: request({
+          id: "select-expand",
+          method: "select",
+          title,
+          options: [{ action: "option-0", label }],
+        }),
+        answer: "half-typed",
+        submitting: false,
+        expanded,
+        onToggleExpanded,
+        theme,
+        layout: { compact: true, platform: "ios" },
+        onAnswerChange,
+        onOpenChange: vi.fn(),
+        onRespond: vi.fn(),
+      });
+
+    const collapsed = render(false);
+    expect(textElement(collapsed, title).props.numberOfLines).toBe(3);
+    expect(textElement(collapsed, label).props.numberOfLines).toBe(2);
+
+    const expanded = render(true);
+    expect(textElement(expanded, title).props.numberOfLines).toBeUndefined();
+    expect(textElement(expanded, label).props.numberOfLines).toBeUndefined();
+
+    // Expanding is a view change: it must not rewrite what the user typed.
+    control(collapsed, "Show full text").props.onPress?.();
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+    expect(onAnswerChange).not.toHaveBeenCalled();
+    expect(control(expanded, "Show less")).toBeDefined();
+  });
+
+  it("offers \"View in session\" only when the host can navigate", () => {
+    const onViewInSession = vi.fn();
+    const props = {
+      open: true,
+      request: request({ id: "confirm-nav", method: "confirm" as const, title: "Deploy now?" }),
+      answer: "",
+      submitting: false,
+      theme,
+      layout: { compact: true, platform: "ios" as const },
+      onAnswerChange: vi.fn(),
+      onOpenChange: vi.fn(),
+      onRespond: vi.fn(),
+    };
+
+    const withoutNavigation = ApprovalRequestModal(props);
+    expect(
+      descendants(withoutNavigation).some(
+        (element) => element.props.accessibilityLabel === "View in session",
+      ),
+    ).toBe(false);
+
+    const withNavigation = ApprovalRequestModal({ ...props, onViewInSession });
+    control(withNavigation, "View in session").props.onPress?.();
+    expect(onViewInSession).toHaveBeenCalledTimes(1);
+  });
 });
