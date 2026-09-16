@@ -51,7 +51,7 @@ it("publishes a System Error compaction line as an Error wrap, never a bubble", 
     id: "a-err",
     pluginId: PLUGIN_ID,
     kind: WRAP_ROW_KIND,
-    data: { badge: "Error", summary: "Context remains above the compaction threshold because compaction did not complete" },
+    data: { badge: "오류", summary: "Context remains above the compaction threshold because compaction did not complete" },
   });
 });
 
@@ -66,9 +66,9 @@ it("wraps timestamp and memory, unwraps user_query, and keeps leftover user pros
   const items = visibleTimelineItems("user", "user-4", text, { clientMessageId: "c4" });
   expect(items.map((item) => item.type)).toEqual(["plugin", "plugin", "plugin"]);
   expect(items.map((item) => (item as { data?: { badge?: string } }).data?.badge)).toEqual([
-    "Error",
-    "Time",
-    "Memory",
+    "오류",
+    "시각",
+    "메모리",
   ]);
 });
 
@@ -82,7 +82,7 @@ Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimeline
 </user_query>`;
   const items = visibleTimelineItems("user", "user-5", text, { clientMessageId: "c5" });
   expect(items.map((item) => item.type)).toEqual(["plugin", "plugin"]);
-  expect(items.map((item) => (item as { data?: { badge?: string } }).data?.badge)).toEqual(["Time", "Memory"]);
+  expect(items.map((item) => (item as { data?: { badge?: string } }).data?.badge)).toEqual(["시각", "메모리"]);
 });
 
 it("publishes each harness bar then the leftover user prose, matching the injected prompt", () => {
@@ -95,8 +95,8 @@ it("publishes each harness bar then the leftover user prose, matching the inject
 이 블록이 paseo 의 omo 에이전트 사용중 그대로 표시되고있어`;
   const items = visibleTimelineItems("user", "user-3", text, { clientMessageId: "c3" });
   expect(items.map((item) => item.type)).toEqual(["plugin", "plugin", "user_message"]);
-  expect(items[0]).toMatchObject({ kind: WRAP_ROW_KIND, data: { badge: "Task" } });
-  expect(items[1]).toMatchObject({ kind: WRAP_ROW_KIND, data: { badge: "Memory" } });
+  expect(items[0]).toMatchObject({ kind: WRAP_ROW_KIND, data: { badge: "작업" } });
+  expect(items[1]).toMatchObject({ kind: WRAP_ROW_KIND, data: { badge: "메모리" } });
   expect(items[2]).toEqual({
     type: "user_message",
     id: "user-3",

@@ -38,17 +38,17 @@ export type WrapPluginItem = {
 };
 
 const KNOWN_BADGE: Readonly<Record<string, string>> = {
-  "omo-senpi-task": "Task",
-  memory_notice: "Memory",
-  memory_metadata: "Memory",
-  "recalled-memory": "Memory",
-  "ultrawork-mode": "Ultrawork",
-  "system-reminder": "Notice",
-  timestamp: "Time",
-  "system-error": "Error",
-  "system-warning": "Warning",
-  "system-notice": "Notice",
-  "system-info": "Info",
+  "omo-senpi-task": "작업",
+  memory_notice: "메모리",
+  memory_metadata: "메모리",
+  "recalled-memory": "메모리",
+  "ultrawork-mode": "울트라워크",
+  "system-reminder": "알림",
+  timestamp: "시각",
+  "system-error": "오류",
+  "system-warning": "경고",
+  "system-notice": "알림",
+  "system-info": "안내",
 };
 
 /**
@@ -164,7 +164,7 @@ function systemHits(source: string): Hit[] {
     hits.push({
       start,
       end: start + match[0].length,
-      wrap: { tag: `system-${kind}`, body: body.length > 0 ? body : `System ${match[1] ?? "Error"}` },
+      wrap: { tag: `system-${kind}`, body: body.length > 0 ? body : `시스템 ${KNOWN_BADGE[`system-${kind}`] ?? "오류"}` },
     });
   }
   for (const match of source.matchAll(compactionLineRe())) {
