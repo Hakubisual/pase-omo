@@ -291,7 +291,7 @@ test("compact DAG rendering keeps primary labels and touch targets inside a 390p
     selectedSessionId: currentSession.id,
     onSelectSession: () => {},
     onRefresh: () => {},
-    isFetching: false,
+    isRefreshing: false,
     theme,
     compact: true,
   });

@@ -399,6 +399,9 @@ export async function listDagSessions(options: DagStoreOptions): Promise<DagSess
       ]),
       taskCount: tasks.length,
       runCount: runs.length,
+      runningCount:
+        tasks.filter((task) => task.status === "running").length +
+        runs.filter((run) => run.status === "running").length,
       ...(session.name ? { title: session.name } : {}),
     });
   }
