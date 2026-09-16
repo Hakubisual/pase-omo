@@ -29,6 +29,13 @@ import {
   type DagSnapshotPayload,
   type DagTask,
 } from "../shared/dag.js";
+import {
+  consumeDagDestination,
+  destinationSelection,
+  peekDagDestination,
+  subscribeDagDestination,
+} from "./dag-navigation.js";
+import type { DagDestination } from "../shared/navigate.js";
 import { agentDagSnapshotRpc } from "../shared/row.js";
 import { graphTypography, READABLE_MIN_SCALE } from "./graph-visual.js";
 
@@ -737,6 +744,18 @@ export function rememberSelectedSession(cwd: string, sessionId: string | null): 
 
 export function recallSelectedSession(cwd: string): string | null {
   return selectedSessionByCwd.get(cwd) ?? null;
+}
+
+/** The DAG node a task was spawned by, so navigating to a task reveals its node. */
+export function nodeForTask(
+  runs: readonly DagRun[],
+  taskId: string,
+): { runId: string; nodeId: string } | null {
+  for (const run of runs) {
+    const node = run.nodes.find((candidate) => candidate.taskId === taskId);
+    if (node) return { runId: run.id, nodeId: node.id };
+  }
+  return null;
 }
 
 // ============================================================================
@@ -2079,6 +2098,11 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
     recallSelectedSession(cwd),
   );
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [destination, setDestination] = useState<DagDestination | null>(() =>
+    peekDagDestination(cwd),
+  );
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [navigationNotice, setNavigationNotice] = useState<string | null>(null);
   const activeSessionId = selectedSessionId;
   const [foldedRuns, setFoldedRuns] = useState<Record<string, boolean>>({});
   const [selectedNodeByRun, setSelectedNodeByRun] = useState<Record<string, string | null>>({});
@@ -2154,6 +2178,39 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   const stats = useMemo(() => calculateSessionStats(snapshot), [snapshot]);
   const workspaceStats = useMemo(() => calculateWorkspaceStats(sessions), [sessions]);
 
+  // A destination parked by "Open in OmO DAG" arrives through the module store,
+  // because the host opens a panel by id and carries no payload with it.
+  useEffect(() => {
+    setDestination(peekDagDestination(cwd));
+    return subscribeDagDestination(() => setDestination(peekDagDestination(cwd)));
+  }, [cwd]);
+
+  // An explicit destination outranks both the remembered selection and the
+  // default, and a session that is no longer listed says so instead of quietly
+  // opening another one.
+  useEffect(() => {
+    if (isAgentScoped || !destination || sessionsQuery.isLoading) return;
+    const { sessionId, listed } = destinationSelection(destination, sessions);
+    consumeDagDestination(cwd);
+    if (!listed) {
+      setNavigationNotice(`Session ${sessionId} is not listed in this workspace anymore.`);
+      return;
+    }
+    setNavigationNotice(null);
+    setSelectedSessionId(sessionId);
+    rememberSelectedSession(cwd, sessionId);
+    if (destination.runId !== undefined) {
+      const runId = destination.runId;
+      setFoldedRuns((previous) => ({ ...previous, [runId]: true }));
+    }
+    if (destination.taskId !== undefined) {
+      const taskId = destination.taskId;
+      setTasksSectionFolded(false);
+      setFoldedTasks((previous) => ({ ...previous, [taskId]: true }));
+      setPendingTaskId(taskId);
+    }
+  }, [cwd, destination, isAgentScoped, sessions, sessionsQuery.isLoading]);
+
   const { allTasksMap, standaloneRootTasks, childTasksMap } = useMemo(() => {
     if (!snapshot) {
       return {
@@ -2204,6 +2261,17 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
     setFoldedTasks((prev) => toggleTaskExpanded(taskId, status, prev));
   }, []);
 
+  // The node a navigated-to task belongs to can only be found once its
+  // session's snapshot has loaded.
+  useEffect(() => {
+    if (pendingTaskId === null || !snapshot) return;
+    const found = nodeForTask(snapshot.runs, pendingTaskId);
+    setPendingTaskId(null);
+    if (!found) return;
+    setFoldedRuns((previous) => ({ ...previous, [found.runId]: true }));
+    setSelectedNodeByRun((previous) => ({ ...previous, [found.runId]: found.nodeId }));
+  }, [pendingTaskId, snapshot]);
+
   const isLoadingSessions = !isAgentScoped && sessionsQuery.isLoading && !sessionsQuery.data;
   const isLoadingSnapshot = isAgentScoped
     ? agentSnapshotQuery.isLoading && !agentSnapshotQuery.data
@@ -2230,6 +2298,27 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           compact={compact}
         />
       ) : null}
+
+      {/* A navigation request that could not be honoured, stated rather than hidden. */}
+      {navigationNotice === null ? null : (
+        <View
+          style={[
+            styles.stateCard,
+            compact && styles.stateCardCompact,
+            {
+              backgroundColor: theme.colors.surface1,
+              borderColor: theme.colors.statusWarning,
+            },
+          ]}
+        >
+          <Text style={[styles.stateTitle, { color: theme.colors.statusWarning }]}>
+            Could not open that DAG destination
+          </Text>
+          <Text style={[styles.stateDesc, { color: theme.colors.foreground }]}>
+            {navigationNotice}
+          </Text>
+        </View>
+      )}
 
       {/* Loading State for Sessions */}
       {isLoadingSessions ? (

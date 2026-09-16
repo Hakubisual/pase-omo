@@ -50,7 +50,13 @@ export function DagPillPopover(props: PluginButtonContentProps) {
           .reverse()
           .map((row) => (
             <View key={row.runId}>
-              <DagGraph row={row} theme={theme} compact={layout.compact} agentId={agentId ?? undefined} />
+              <DagGraph
+                row={row}
+                theme={theme}
+                compact={layout.compact}
+                agentId={agentId ?? undefined}
+                navigable
+              />
             </View>
           ))
       )}

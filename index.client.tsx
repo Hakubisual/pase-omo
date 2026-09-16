@@ -3,6 +3,7 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 
 import { ApprovalPanel } from "./client/approval-panel.js";
 import { contributeApprovalPill } from "./client/approval-pill.js";
+import { setDagNavigationHost } from "./client/dag-navigation.js";
 import { contributeDagPill } from "./client/dag-pill.js";
 import { FoldersPanel } from "./client/folders-panel.js";
 import { DagGlobalSurface, DagPanel } from "./client/dag.js";
@@ -36,6 +37,11 @@ import { DAG_ROW_KIND, DAG_ROW_VERSION, DagRowSchema } from "./shared/row.js";
  */
 export default function contribute(client: PluginClientContext): PluginCleanup {
   const registrations: PluginCleanup[] = [];
+
+  // Timeline rows and pill popovers get no host navigation of their own, so the
+  // "Open in OmO DAG" action reaches the host through this client handle.
+  setDagNavigationHost(client);
+  registrations.push(() => setDagNavigationHost(null));
 
   registrations.push(
     client.addWorkspacePanel({
