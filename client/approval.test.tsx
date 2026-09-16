@@ -285,11 +285,18 @@ describe("ApprovalRequestModal", () => {
       flexDirection: "column-reverse",
     });
 
-    for (const label of [title, firstOption, secondOption, "Cancel"]) {
+    // A button label is one line by design - it names an action, and a wrapped
+    // button grows the row the thumb aims at.
+    const action = textElement(tree, "Cancel");
+    expect(action.props.ellipsizeMode).toBe("tail");
+    expect(action.props.numberOfLines).toBeGreaterThanOrEqual(1);
+
+    // The request and its options are the text being read, so they wrap instead
+    // of ending in an ellipsis, and still cannot spill past the viewport.
+    for (const label of [title, firstOption, secondOption]) {
       const element = textElement(tree, label);
-      expect(element.props.ellipsizeMode).toBe("tail");
-      expect(element.props.numberOfLines).toBeGreaterThanOrEqual(1);
-      expect(flattenStyle(element.props.style)).toMatchObject({ maxWidth: "100%", flexShrink: 1 });
+      expect(element.props.numberOfLines).toBeUndefined();
+      expect(flattenStyle(element.props.style)).toMatchObject({ maxWidth: "100%" });
     }
 
     for (const label of [`Choose ${firstOption}`, `Choose ${secondOption}`, "Deny"]) {
@@ -333,44 +340,35 @@ describe("ApprovalRequestModal", () => {
     expect(control(scroll, "Answer input")).toBeDefined();
   });
 
-  it("shows the request and its options in full once expanded, without touching the answer", () => {
+  it("shows the request and its options in full, with nothing to expand", () => {
     const title = "Pick the deployment destination for this very long mobile release request";
     const label = "Production in Asia Pacific Northeast with automatic failover enabled";
-    const onToggleExpanded = vi.fn();
-    const onAnswerChange = vi.fn();
-    const render = (expanded: boolean) =>
-      ApprovalRequestModal({
-        open: true,
-        request: request({
-          id: "select-expand",
-          method: "select",
-          title,
-          options: [{ action: "option-0", label }],
-        }),
-        answer: "half-typed",
-        submitting: false,
-        expanded,
-        onToggleExpanded,
-        theme,
-        layout: { compact: true, platform: "ios" },
-        onAnswerChange,
-        onOpenChange: vi.fn(),
-        onRespond: vi.fn(),
-      });
+    const tree = ApprovalRequestModal({
+      open: true,
+      request: request({
+        id: "select-full",
+        method: "select",
+        title,
+        options: [{ action: "option-0", label }],
+      }),
+      answer: "half-typed",
+      submitting: false,
+      theme,
+      layout: { compact: true, platform: "ios" },
+      onAnswerChange: vi.fn(),
+      onOpenChange: vi.fn(),
+      onRespond: vi.fn(),
+    });
 
-    const collapsed = render(false);
-    expect(textElement(collapsed, title).props.numberOfLines).toBe(3);
-    expect(textElement(collapsed, label).props.numberOfLines).toBe(2);
-
-    const expanded = render(true);
-    expect(textElement(expanded, title).props.numberOfLines).toBeUndefined();
-    expect(textElement(expanded, label).props.numberOfLines).toBeUndefined();
-
-    // Expanding is a view change: it must not rewrite what the user typed.
-    control(collapsed, "Show full text").props.onPress?.();
-    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
-    expect(onAnswerChange).not.toHaveBeenCalled();
-    expect(control(expanded, "Show less")).toBeDefined();
+    // The reported bug: a question clipped at three lines with a tail ellipsis
+    // had to be answered unread. The request scroller carries the whole text,
+    // so there is no clamp and no toggle to find.
+    expect(textElement(tree, title).props.numberOfLines).toBeUndefined();
+    expect(textElement(tree, title).props.ellipsizeMode).toBeUndefined();
+    expect(textElement(tree, label).props.numberOfLines).toBeUndefined();
+    expect(descendants(tree).some((element) => element.props.accessibilityLabel === "Show full text")).toBe(
+      false,
+    );
   });
 
   it("offers \"View in session\" only when the host can navigate", () => {
