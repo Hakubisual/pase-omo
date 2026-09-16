@@ -177,3 +177,52 @@ Wrap splitting is provider-side in server/provider/text-wrap.ts (visibleTimeline
   });
   expect(isHarnessTag("recalled-memory")).toBe(true);
 });
+
+
+/**
+ * A chat about this plugin quotes the very tags the harness injects. Pulling a
+ * quote out of a code block leaves an empty fence and a bar that claims the
+ * harness said it, so quoted text is left exactly as written.
+ */
+
+const FENCED = ["Here is the tag we inject:", "", "```xml", "<omo-senpi-task>", "  sample", "</omo-senpi-task>", "```", "", "That is the whole block."].join("\n");
+
+it("leaves a harness tag quoted in a fenced block alone", () => {
+  const split = splitHarnessWraps(FENCED);
+  expect(split.wraps).toEqual([]);
+  expect(split.remaining).toBe(FENCED);
+});
+
+it("leaves a harness tag quoted in an inline span alone", () => {
+  const text = "Write `<omo-senpi-task>x</omo-senpi-task>` to reproduce it.";
+  const split = splitHarnessWraps(text);
+  expect(split.wraps).toEqual([]);
+  expect(split.remaining).toBe(text);
+});
+
+it("protects a fence that the message never closes", () => {
+  const text = ["```xml", "<memory_notice>hi</memory_notice>"].join("\n");
+  const split = splitHarnessWraps(text);
+  expect(split.wraps).toEqual([]);
+  expect(split.remaining).toBe(text);
+});
+
+it("keeps wrapping the injected block when the same message also quotes one", () => {
+  const text = ["<memory_notice>the real injection</memory_notice>", "", "```", "<omo-senpi-task>quoted</omo-senpi-task>", "```"].join("\n");
+  const split = splitHarnessWraps(text);
+  expect(split.wraps).toEqual([{ tag: "memory_notice", body: "the real injection" }]);
+  expect(split.remaining).toBe(["```", "<omo-senpi-task>quoted</omo-senpi-task>", "```"].join("\n"));
+});
+
+it("leaves a System Error line that is part of a quoted log", () => {
+  const text = ["```", "[System Error] sample log line", "```"].join("\n");
+  const split = splitHarnessWraps(text);
+  expect(split.wraps).toEqual([]);
+  expect(split.remaining).toBe(text);
+});
+
+it("still wraps a System Error line outside code", () => {
+  const split = splitHarnessWraps("[System Error] the real one");
+  expect(split.remaining).toBe("");
+  expect(split.wraps).toEqual([{ tag: "system-error", body: "the real one" }]);
+});
