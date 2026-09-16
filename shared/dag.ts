@@ -57,6 +57,8 @@ export const DagSessionSchema = z.object({
   updatedAt: z.string(),
   taskCount: z.number().int().nonnegative(),
   runCount: z.number().int().nonnegative(),
+  /** DAG runs and tasks that are running right now, so a live session is findable. */
+  runningCount: z.number().int().nonnegative().optional(),
   title: z.string().optional(),
 });
 export type DagSession = z.infer<typeof DagSessionSchema>;

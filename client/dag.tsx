@@ -16,6 +16,9 @@ import {
   Text,
   TextInput,
   View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import {
   getSnapshotRpc,
@@ -26,6 +29,13 @@ import {
   type DagSnapshotPayload,
   type DagTask,
 } from "../shared/dag.js";
+import {
+  consumeDagDestination,
+  destinationSelection,
+  peekDagDestination,
+  subscribeDagDestination,
+} from "./dag-navigation.js";
+import type { DagDestination } from "../shared/navigate.js";
 import { agentDagSnapshotRpc } from "../shared/row.js";
 import { graphTypography, READABLE_MIN_SCALE } from "./graph-visual.js";
 
@@ -613,6 +623,142 @@ export function calculateSessionStats(snapshot: DagSnapshotPayload | null | unde
 }
 
 // ============================================================================
+// Session List Helpers
+// ============================================================================
+
+/** DAG runs and tasks OmO has recorded against a session. */
+export function sessionActivityCount(session: DagSession): number {
+  return session.runCount + session.taskCount;
+}
+
+/** How much of that work is running right now. */
+export function sessionRunningCount(session: DagSession): number {
+  return session.runningCount ?? 0;
+}
+
+/** The newest session, which is the only one that earns the "latest" tag. */
+export function latestSessionId(sessions: DagSession[]): string | null {
+  let latest: DagSession | undefined;
+  for (const session of sessions) {
+    if (!latest || session.createdAt.localeCompare(latest.createdAt) > 0) latest = session;
+  }
+  return latest?.id ?? null;
+}
+
+/**
+ * Sessions are listed newest first, so every session spawned during a run lands
+ * ahead of the one being watched. The filter drops sessions with nothing
+ * recorded — never the selected one, which would leave the panel showing a
+ * snapshot for a session the list no longer offers.
+ */
+export function visibleSessions(
+  sessions: DagSession[],
+  activeOnly: boolean,
+  selectedSessionId: string | null,
+): DagSession[] {
+  if (!activeOnly) return sessions;
+  return sessions.filter(
+    (session) =>
+      session.id === selectedSessionId ||
+      sessionActivityCount(session) > 0 ||
+      sessionRunningCount(session) > 0,
+  );
+}
+
+/** The selection survives a list refresh; it moves only once it stops existing. */
+export function resolveSelectedSession(
+  sessions: DagSession[],
+  selectedSessionId: string | null,
+): string | null {
+  if (selectedSessionId && sessions.some((session) => session.id === selectedSessionId)) {
+    return selectedSessionId;
+  }
+  return sessions[0]?.id ?? null;
+}
+
+export interface WorkspaceStats {
+  sessionCount: number;
+  activeSessionCount: number;
+  totalRuns: number;
+  totalTasks: number;
+  runningCount: number;
+}
+
+/** Workspace-wide totals, so an empty selected session never reads as an empty workspace. */
+export function calculateWorkspaceStats(sessions: DagSession[]): WorkspaceStats {
+  let activeSessionCount = 0;
+  let totalRuns = 0;
+  let totalTasks = 0;
+  let runningCount = 0;
+  for (const session of sessions) {
+    if (sessionActivityCount(session) > 0) activeSessionCount++;
+    totalRuns += session.runCount;
+    totalTasks += session.taskCount;
+    runningCount += sessionRunningCount(session);
+  }
+  return {
+    sessionCount: sessions.length,
+    activeSessionCount,
+    totalRuns,
+    totalTasks,
+    runningCount,
+  };
+}
+
+export interface ScrollSpan {
+  start: number;
+  size: number;
+}
+
+export interface ScrollViewport {
+  offset: number;
+  size: number;
+}
+
+/**
+ * Where the scroller has to move for `span` to be fully on screen, or null when
+ * it already is. Returning null is what leaves a user's own scroll position
+ * alone while new sessions arrive.
+ */
+export function scrollOffsetForVisibility(
+  span: ScrollSpan,
+  viewport: ScrollViewport,
+  padding = 12,
+): number | null {
+  if (span.size <= 0 || viewport.size <= 0) return null;
+  const start = span.start - padding;
+  const end = span.start + span.size + padding;
+  if (start < viewport.offset) return Math.max(0, start);
+  if (end > viewport.offset + viewport.size) return Math.max(0, end - viewport.size);
+  return null;
+}
+
+/** Which session was being watched, per workspace directory. */
+const selectedSessionByCwd = new Map<string, string>();
+
+export function rememberSelectedSession(cwd: string, sessionId: string | null): void {
+  if (!cwd) return;
+  if (sessionId === null) selectedSessionByCwd.delete(cwd);
+  else selectedSessionByCwd.set(cwd, sessionId);
+}
+
+export function recallSelectedSession(cwd: string): string | null {
+  return selectedSessionByCwd.get(cwd) ?? null;
+}
+
+/** The DAG node a task was spawned by, so navigating to a task reveals its node. */
+export function nodeForTask(
+  runs: readonly DagRun[],
+  taskId: string,
+): { runId: string; nodeId: string } | null {
+  for (const run of runs) {
+    const node = run.nodes.find((candidate) => candidate.taskId === taskId);
+    if (node) return { runId: run.id, nodeId: node.id };
+  }
+  return null;
+}
+
+// ============================================================================
 // Effective State & Folding Helpers
 // ============================================================================
 
@@ -694,7 +840,8 @@ export interface SessionSelectorBarProps {
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onRefresh: () => void;
-  isFetching: boolean;
+  /** True only while a refresh the user pressed is in flight, never for polling. */
+  isRefreshing: boolean;
   theme: PluginTheme;
   compact: boolean;
 }
@@ -705,12 +852,37 @@ export function SessionSelectorBar({
   selectedSessionId,
   onSelectSession,
   onRefresh,
-  isFetching,
+  isRefreshing,
   theme,
   compact,
 }: SessionSelectorBarProps): React.JSX.Element {
   const scrollRef = useRef<ScrollView>(null);
   const [showAllDropdown, setShowAllDropdown] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const pillSpans = useRef<Record<string, ScrollSpan>>({});
+  const viewportRef = useRef<ScrollViewport>({ offset: 0, size: 0 });
+
+  const shownSessions = visibleSessions(sessions, activeOnly, selectedSessionId);
+  const latestId = latestSessionId(sessions);
+  const shownIds = shownSessions.map((session) => session.id).join("|");
+
+  // New sessions push the watched one out of view. Bring it back when it left,
+  // and leave the scroller untouched when it did not.
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const span = pillSpans.current[selectedSessionId];
+    if (!span) return;
+    const offset = scrollOffsetForVisibility(span, viewportRef.current);
+    if (offset === null) return;
+    scrollRef.current?.scrollTo(
+      compact ? { y: offset, animated: false } : { x: offset, animated: false },
+    );
+  }, [selectedSessionId, shownIds, compact]);
+
+  const measurePill = (sessionId: string) => (event: LayoutChangeEvent) => {
+    const { x, y, width, height } = event.nativeEvent.layout;
+    pillSpans.current[sessionId] = compact ? { start: y, size: height } : { start: x, size: width };
+  };
 
   return (
     <View
@@ -777,7 +949,34 @@ export function SessionSelectorBar({
                     },
                   ]}
                 >
-                  목록 ({sessions.length})
+                  목록 ({shownSessions.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="DAG 또는 태스크 기록이 있는 세션만 보기"
+                accessibilityState={{ selected: activeOnly }}
+                onPress={() => setActiveOnly((prev) => !prev)}
+                style={({ pressed }) => [
+                  styles.navMiniButton,
+                  {
+                    backgroundColor: activeOnly ? theme.colors.accent : theme.colors.surface2,
+                    borderColor: activeOnly ? theme.colors.accent : theme.colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.navMiniButtonText,
+                    {
+                      color: activeOnly
+                        ? theme.colors.accentForeground
+                        : theme.colors.foreground,
+                    },
+                  ]}
+                >
+                  활동 있는 세션만
                 </Text>
               </Pressable>
               <Pressable
@@ -801,9 +1000,9 @@ export function SessionSelectorBar({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="세션 및 DAG 데이터 새로고침"
-            accessibilityState={{ disabled: isFetching }}
+            accessibilityState={{ disabled: isRefreshing }}
             onPress={onRefresh}
-            disabled={isFetching}
+            disabled={isRefreshing}
             style={({ pressed }) => [
               styles.refreshButton,
               {
@@ -813,7 +1012,7 @@ export function SessionSelectorBar({
               },
             ]}
           >
-            {isFetching ? (
+            {isRefreshing ? (
               <ActivityIndicator size="small" color={theme.colors.accent} />
             ) : (
               <Text style={[styles.refreshButtonText, { color: theme.colors.foreground }]}>
@@ -836,11 +1035,14 @@ export function SessionSelectorBar({
           ]}
         >
           <Text style={[styles.dropdownHeader, { color: theme.colors.foregroundMuted }]}>
-            전체 세션 선택 ({sessions.length}개)
+            {activeOnly
+              ? `활동 있는 세션 (${sessions.length}개 중 ${shownSessions.length}개)`
+              : `전체 세션 선택 (${sessions.length}개)`}
           </Text>
           <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
-            {sessions.map((session, index) => {
+            {shownSessions.map((session) => {
               const isSelected = session.id === selectedSessionId;
+              const running = sessionRunningCount(session);
               return (
                 <Pressable
                   key={session.id}
@@ -879,14 +1081,18 @@ export function SessionSelectorBar({
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {index === 0 ? "★ [최신] " : ""}{session.id}
+                      {session.id === latestId ? "★ [최신] " : ""}{session.id}
                     </Text>
                     <Text
-                      style={[styles.dropdownItemMeta, { color: theme.colors.foregroundMuted }]}
+                      style={[
+                        styles.dropdownItemMeta,
+                        { color: running > 0 ? theme.colors.accent : theme.colors.foregroundMuted },
+                      ]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
                       DAG {session.runCount} · 태스크 {session.taskCount}
+                      {running > 0 ? ` · ● ${running} 실행 중` : ""}
                     </Text>
                   </View>
                   <Text
@@ -903,19 +1109,35 @@ export function SessionSelectorBar({
         </View>
       ) : null}
 
-      {sessions.length > 0 ? (
+      {shownSessions.length > 0 ? (
         <ScrollView
           ref={scrollRef}
           horizontal={!compact}
           showsHorizontalScrollIndicator={!compact}
+          scrollEventThrottle={16}
+          onLayout={(event: LayoutChangeEvent) => {
+            const { width, height } = event.nativeEvent.layout;
+            viewportRef.current = {
+              offset: viewportRef.current.offset,
+              size: compact ? height : width,
+            };
+          }}
+          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            const { x, y } = event.nativeEvent.contentOffset;
+            viewportRef.current = {
+              offset: compact ? y : x,
+              size: viewportRef.current.size,
+            };
+          }}
           contentContainerStyle={[
             styles.sessionPillsScroll,
             compact && styles.sessionPillsScrollCompact,
           ]}
         >
-          {sessions.map((session, index) => {
+          {shownSessions.map((session) => {
             const isSelected = session.id === selectedSessionId;
-            const isLatest = index === 0;
+            const isLatest = session.id === latestId;
+            const running = sessionRunningCount(session);
             return (
               <Pressable
                 key={session.id}
@@ -923,6 +1145,7 @@ export function SessionSelectorBar({
                 accessibilityLabel={`세션 선택: ${session.id}`}
                 accessibilityState={{ selected: isSelected }}
                 onPress={() => onSelectSession(session.id)}
+                onLayout={measurePill(session.id)}
                 style={({ pressed }) => [
                   styles.sessionPill,
                   compact && styles.sessionPillCompact,
@@ -984,7 +1207,9 @@ export function SessionSelectorBar({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {formatKoreanDateTime(session.createdAt)} · DAG {session.runCount} · 태스크 {session.taskCount}
+                  {formatKoreanDateTime(session.createdAt)} · DAG {session.runCount} · 태스크{" "}
+                  {session.taskCount}
+                  {running > 0 ? ` · ● ${running} 실행 중` : ""}
                 </Text>
               </Pressable>
             );
@@ -997,11 +1222,21 @@ export function SessionSelectorBar({
 
 export interface SessionStatsBarProps {
   stats: SessionStats;
+  /** What the counters describe, since they cover one session and not the workspace. */
+  scopeLabel: string;
+  /** Workspace-wide totals, omitted where no session list exists. */
+  workspace?: WorkspaceStats;
   theme: PluginTheme;
   compact: boolean;
 }
 
-export function SessionStatsBar({ stats, theme, compact }: SessionStatsBarProps): React.JSX.Element {
+export function SessionStatsBar({
+  stats,
+  scopeLabel,
+  workspace,
+  theme,
+  compact,
+}: SessionStatsBarProps): React.JSX.Element {
   const items = [
     { label: "DAG 실행", value: stats.totalRuns, color: theme.colors.foreground },
     {
@@ -1027,47 +1262,62 @@ export function SessionStatsBar({ stats, theme, compact }: SessionStatsBarProps)
   ];
 
   return (
-    <View
-      style={[
-        styles.statsBar,
-        compact && styles.statsBarCompact,
-        {
-          backgroundColor: theme.colors.surface1,
-          borderColor: theme.colors.border,
-        },
-      ]}
-    >
-      {items.map((item, index) => (
-        <React.Fragment key={item.label}>
-          {index > 0 ? (
-            <View
-              style={[
-                styles.statDivider,
-                compact && styles.statDividerCompact,
-                { backgroundColor: theme.colors.border },
-              ]}
-            />
-          ) : null}
-          <View style={[styles.statItem, compact && styles.statItemCompact]}>
-            <Text
-              style={[
-                styles.statLabel,
-                {
-                  color:
-                    item.label === "DAG 실행" || item.label === "일반 작업"
-                      ? theme.colors.foregroundMuted
-                      : item.color,
-                },
-              ]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {item.label}
-            </Text>
-            <Text style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
-          </View>
-        </React.Fragment>
-      ))}
+    <View style={styles.statsBlock}>
+      <Text style={[styles.statsScopeLabel, { color: theme.colors.foregroundMuted }]}>
+        {scopeLabel}
+      </Text>
+      <View
+        style={[
+          styles.statsBar,
+          compact && styles.statsBarCompact,
+          {
+            backgroundColor: theme.colors.surface1,
+            borderColor: theme.colors.border,
+          },
+        ]}
+      >
+        {items.map((item, index) => (
+          <React.Fragment key={item.label}>
+            {index > 0 ? (
+              <View
+                style={[
+                  styles.statDivider,
+                  compact && styles.statDividerCompact,
+                  { backgroundColor: theme.colors.border },
+                ]}
+              />
+            ) : null}
+            <View style={[styles.statItem, compact && styles.statItemCompact]}>
+              <Text
+                style={[
+                  styles.statLabel,
+                  {
+                    color:
+                      item.label === "DAG 실행" || item.label === "일반 작업"
+                        ? theme.colors.foregroundMuted
+                        : item.color,
+                  },
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {item.label}
+              </Text>
+              <Text style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+      {workspace ? (
+        <Text
+          style={[styles.statsScopeNote, { color: theme.colors.foregroundMuted }]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {`워크스페이스 전체: 세션 ${workspace.sessionCount}개 · DAG 실행 ${workspace.totalRuns}개 · 태스크 ${workspace.totalTasks}개`}
+          {workspace.runningCount > 0 ? ` · 실행 중 ${workspace.runningCount}개` : ""}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -1844,19 +2094,27 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   const queryClient = useQueryClient();
 
   const isAgentScoped = agentId !== undefined;
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
+    recallSelectedSession(cwd),
+  );
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [destination, setDestination] = useState<DagDestination | null>(() =>
+    peekDagDestination(cwd),
+  );
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [navigationNotice, setNavigationNotice] = useState<string | null>(null);
   const activeSessionId = selectedSessionId;
   const [foldedRuns, setFoldedRuns] = useState<Record<string, boolean>>({});
   const [selectedNodeByRun, setSelectedNodeByRun] = useState<Record<string, string | null>>({});
   const [foldedTasks, setFoldedTasks] = useState<Record<string, boolean>>({});
   const [tasksSectionFolded, setTasksSectionFolded] = useState<boolean>(false);
 
-  // Reset selected session if directory changes
+  // A new directory restores whichever session was last watched there.
   const prevCwdRef = useRef(cwd);
   useEffect(() => {
     if (prevCwdRef.current !== cwd) {
       prevCwdRef.current = cwd;
-      setSelectedSessionId(null);
+      setSelectedSessionId(recallSelectedSession(cwd));
       setFoldedRuns({});
       setSelectedNodeByRun({});
       setFoldedTasks({});
@@ -1876,14 +2134,16 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
 
   const sessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data]);
 
-  // Default to the first session on first load or when sessions change
+  // The selection is sticky: a refreshed list moves it only once the selected
+  // session stops being listed, so sessions created mid-run never steal it.
   useEffect(() => {
     if (isAgentScoped || sessions.length === 0) return;
-    const firstSession = sessions[0];
-    if (firstSession && (!selectedSessionId || !sessions.some((s) => s.id === selectedSessionId))) {
-      setSelectedSessionId(firstSession.id);
+    const resolved = resolveSelectedSession(sessions, selectedSessionId);
+    if (resolved && resolved !== selectedSessionId) {
+      setSelectedSessionId(resolved);
+      rememberSelectedSession(cwd, resolved);
     }
-  }, [isAgentScoped, sessions, selectedSessionId]);
+  }, [cwd, isAgentScoped, sessions, selectedSessionId]);
 
   const snapshotQuery = useQuery({
     queryKey: ["dag", "snapshot", cwd, activeSessionId],
@@ -1916,6 +2176,40 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
         : agentSnapshotQuery.data
       : snapshotQuery.data;
   const stats = useMemo(() => calculateSessionStats(snapshot), [snapshot]);
+  const workspaceStats = useMemo(() => calculateWorkspaceStats(sessions), [sessions]);
+
+  // A destination parked by "Open in OmO DAG" arrives through the module store,
+  // because the host opens a panel by id and carries no payload with it.
+  useEffect(() => {
+    setDestination(peekDagDestination(cwd));
+    return subscribeDagDestination(() => setDestination(peekDagDestination(cwd)));
+  }, [cwd]);
+
+  // An explicit destination outranks both the remembered selection and the
+  // default, and a session that is no longer listed says so instead of quietly
+  // opening another one.
+  useEffect(() => {
+    if (isAgentScoped || !destination || sessionsQuery.isLoading) return;
+    const { sessionId, listed } = destinationSelection(destination, sessions);
+    consumeDagDestination(cwd);
+    if (!listed) {
+      setNavigationNotice(`세션 ${sessionId} 은(는) 이 워크스페이스 목록에 더 이상 없습니다.`);
+      return;
+    }
+    setNavigationNotice(null);
+    setSelectedSessionId(sessionId);
+    rememberSelectedSession(cwd, sessionId);
+    if (destination.runId !== undefined) {
+      const runId = destination.runId;
+      setFoldedRuns((previous) => ({ ...previous, [runId]: true }));
+    }
+    if (destination.taskId !== undefined) {
+      const taskId = destination.taskId;
+      setTasksSectionFolded(false);
+      setFoldedTasks((previous) => ({ ...previous, [taskId]: true }));
+      setPendingTaskId(taskId);
+    }
+  }, [cwd, destination, isAgentScoped, sessions, sessionsQuery.isLoading]);
 
   const { allTasksMap, standaloneRootTasks, childTasksMap } = useMemo(() => {
     if (!snapshot) {
@@ -1928,9 +2222,29 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
     return computeTaskHierarchy(snapshot.tasks, snapshot.runs);
   }, [snapshot]);
 
+  // Polling invalidates these queries every couple of seconds; only a refresh
+  // the user pressed may turn the button into a spinner, and it refreshes the
+  // queries this view actually shows rather than every DAG query in the app.
   const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["dag"] });
-  }, [queryClient]);
+    const queryKeys = isAgentScoped
+      ? [["dag", "agent-snapshot", agentId]]
+      : [
+          ["dag", "sessions", cwd],
+          ["dag", "snapshot", cwd, activeSessionId],
+        ];
+    setIsManualRefreshing(true);
+    void Promise.all(
+      queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    ).finally(() => setIsManualRefreshing(false));
+  }, [activeSessionId, agentId, cwd, isAgentScoped, queryClient]);
+
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      setSelectedSessionId(sessionId);
+      rememberSelectedSession(cwd, sessionId);
+    },
+    [cwd],
+  );
 
   const handleToggleRunFold = useCallback((runId: string) => {
     setFoldedRuns((prev) => toggleRunExpanded(runId, prev));
@@ -1946,6 +2260,17 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   const handleToggleTaskFold = useCallback((taskId: string, status?: string) => {
     setFoldedTasks((prev) => toggleTaskExpanded(taskId, status, prev));
   }, []);
+
+  // The node a navigated-to task belongs to can only be found once its
+  // session's snapshot has loaded.
+  useEffect(() => {
+    if (pendingTaskId === null || !snapshot) return;
+    const found = nodeForTask(snapshot.runs, pendingTaskId);
+    setPendingTaskId(null);
+    if (!found) return;
+    setFoldedRuns((previous) => ({ ...previous, [found.runId]: true }));
+    setSelectedNodeByRun((previous) => ({ ...previous, [found.runId]: found.nodeId }));
+  }, [pendingTaskId, snapshot]);
 
   const isLoadingSessions = !isAgentScoped && sessionsQuery.isLoading && !sessionsQuery.data;
   const isLoadingSnapshot = isAgentScoped
@@ -1966,13 +2291,34 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           cwd={cwd}
           sessions={sessions}
           selectedSessionId={selectedSessionId}
-          onSelectSession={setSelectedSessionId}
+          onSelectSession={handleSelectSession}
           onRefresh={handleRefresh}
-          isFetching={sessionsQuery.isFetching || snapshotQuery.isFetching}
+          isRefreshing={isManualRefreshing}
           theme={theme}
           compact={compact}
         />
       ) : null}
+
+      {/* A navigation request that could not be honoured, stated rather than hidden. */}
+      {navigationNotice === null ? null : (
+        <View
+          style={[
+            styles.stateCard,
+            compact && styles.stateCardCompact,
+            {
+              backgroundColor: theme.colors.surface1,
+              borderColor: theme.colors.statusWarning,
+            },
+          ]}
+        >
+          <Text style={[styles.stateTitle, { color: theme.colors.statusWarning }]}>
+해당 DAG 위치를 열 수 없습니다
+          </Text>
+          <Text style={[styles.stateDesc, { color: theme.colors.foreground }]}>
+            {navigationNotice}
+          </Text>
+        </View>
+      )}
 
       {/* Loading State for Sessions */}
       {isLoadingSessions ? (
@@ -2052,7 +2398,13 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
       {hasSelectedSession && (
         <>
           {/* Summary Stats */}
-          <SessionStatsBar stats={stats} theme={theme} compact={compact} />
+          <SessionStatsBar
+            stats={stats}
+            scopeLabel={isAgentScoped ? "이 에이전트 세션" : "선택한 세션"}
+            {...(isAgentScoped ? {} : { workspace: workspaceStats })}
+            theme={theme}
+            compact={compact}
+          />
 
           {/* Snapshot Loading State */}
           {isLoadingSnapshot ? (
@@ -2637,6 +2989,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   sessionPillMeta: {
+    fontSize: 11,
+  },
+  statsBlock: {
+    width: "100%",
+    gap: 6,
+  },
+  statsScopeLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  statsScopeNote: {
     fontSize: 11,
   },
   statsBar: {

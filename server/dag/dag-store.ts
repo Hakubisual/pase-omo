@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { DagRun, DagSession, DagStatus, DagTask } from "../../shared/dag.js";
+import type { LocateDagPayload } from "../../shared/navigate.js";
 import { readSessionHeaders, sameCwd, type SessionHeader, sessionsDir } from "../provider/omo-store.js";
 import { taskStateDir as resolveTaskStateDir } from "../task-state.js";
 
@@ -399,6 +400,9 @@ export async function listDagSessions(options: DagStoreOptions): Promise<DagSess
       ]),
       taskCount: tasks.length,
       runCount: runs.length,
+      runningCount:
+        tasks.filter((task) => task.status === "running").length +
+        runs.filter((run) => run.status === "running").length,
       ...(session.name ? { title: session.name } : {}),
     });
   }
@@ -418,4 +422,88 @@ export async function getDagSnapshot(
     throw sessionNotFound();
   }
   return { sessionId: selected.id, ...project(catalog, selected.id) };
+}
+
+/**
+ * Resolve what a chat, DAG card or task card points at in the dashboard.
+ *
+ * A run or a task names the session that owns it, and a child session names the
+ * session that spawned it, so navigation walks those recorded links up to the
+ * top-level session the panel actually lists. Guessing from list order is what
+ * this replaces: the newest session is almost never the right destination.
+ */
+export async function locateDagDestination(
+  options: DagStoreOptions & { sessionId?: string; runId?: string; taskId?: string },
+): Promise<LocateDagPayload> {
+  const resolved = resolveOptions(options);
+  const catalog = await readCatalog(resolved);
+
+  const runOwner = new Map<string, string>();
+  for (const { raw } of catalog.runs) {
+    const runId = raw.runId;
+    const owner = nonempty(raw.rootSessionId) ? raw.rootSessionId : raw.parentSessionId;
+    if (nonempty(runId) && nonempty(owner)) runOwner.set(runId, owner);
+  }
+
+  const taskOwner = new Map<string, string>();
+  const sessionOwner = new Map<string, string>();
+  for (const { raw } of catalog.tasks) {
+    const taskId = raw.task_id;
+    const childSessionId = raw.child_session_id;
+    const owner = nonempty(raw.root_session_id) ? raw.root_session_id : raw.parent_session_id;
+    if (!nonempty(owner)) continue;
+    if (nonempty(taskId)) taskOwner.set(taskId, owner);
+    if (nonempty(childSessionId)) sessionOwner.set(childSessionId, owner);
+  }
+
+  const requested =
+    options.sessionId ??
+    (options.runId === undefined ? undefined : runOwner.get(options.runId)) ??
+    (options.taskId === undefined ? undefined : taskOwner.get(options.taskId));
+  if (!nonempty(requested)) {
+    return { destination: null, reason: "이 항목을 소유한 OmO 세션이 아직 없습니다." };
+  }
+
+  let sessionId = requested;
+  const walked = new Set<string>();
+  while (catalog.children.has(sessionId) && !walked.has(sessionId)) {
+    walked.add(sessionId);
+    const owner = sessionOwner.get(sessionId);
+    if (owner === undefined || owner === sessionId) break;
+    sessionId = owner;
+  }
+
+  const session = catalog.sessions.get(sessionId);
+  if (!session || !sameCwd(session.cwd, catalog.cwd) || catalog.children.has(sessionId)) {
+    return {
+      destination: null,
+      reason: `세션 ${sessionId} 은(는) 이 워크스페이스 목록에 더 이상 없습니다.`,
+    };
+  }
+
+  const { tasks, runs } = project(catalog, sessionId);
+  const runId =
+    options.runId !== undefined && runs.some((run) => run.id === options.runId)
+      ? options.runId
+      : undefined;
+  const taskId =
+    options.taskId !== undefined && tasks.some((task) => task.id === options.taskId)
+      ? options.taskId
+      : undefined;
+  const missing = [
+    options.runId !== undefined && runId === undefined ? `run ${options.runId}` : undefined,
+    options.taskId !== undefined && taskId === undefined ? `task ${options.taskId}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+
+  return {
+    destination: {
+      cwd: session.cwd,
+      sessionId,
+      ...(runId === undefined ? {} : { runId }),
+      ...(taskId === undefined ? {} : { taskId }),
+    },
+    ...(missing.length === 0
+      ? {}
+      : { reason: `세션은 열었지만 ${missing.join(", ")} 기록은 남아 있지 않습니다.` }),
+  };
 }

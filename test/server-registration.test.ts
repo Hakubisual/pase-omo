@@ -29,6 +29,9 @@ describe("unified server registrations", () => {
       // The agent-side panel resolves its own session's snapshot through this
       // one; without it registered the panel beside an agent stays empty.
       "dag.agent-snapshot",
+      // "Open in OmO DAG" resolves its destination here rather than in the
+      // client, because only the daemon can walk a child session to its owner.
+      "dag.locate",
       "dag.projects",
       "dag.sessions",
       "dag.snapshot",
