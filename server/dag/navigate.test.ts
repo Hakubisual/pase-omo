@@ -115,5 +115,5 @@ test("an agent with no recorded workspace reports that rather than picking one",
   await fixture();
   const located = await locateDag({ sessionId: "parent" });
   expect(located.destination).toBeNull();
-  expect(located.reason).toContain("workspace");
+  expect(located.reason).toContain("워크스페이스");
 });

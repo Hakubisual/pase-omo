@@ -71,7 +71,7 @@ export async function openInDagDashboard(
 ): Promise<DagNavigationResult> {
   const client = host;
   if (!client) {
-    return { ok: false, reason: "The OmO DAG panel is not available in this window." };
+    return { ok: false, reason: "이 창에서는 OmO DAG 패널을 열 수 없습니다." };
   }
 
   const { destination, reason } = await client.rpc(locateDagRpc, {
@@ -82,7 +82,7 @@ export async function openInDagDashboard(
     ...(request.taskId === undefined ? {} : { taskId: request.taskId }),
   });
   if (!destination) {
-    return { ok: false, reason: reason ?? "That DAG destination no longer exists." };
+    return { ok: false, reason: reason ?? "해당 DAG 위치가 더 이상 존재하지 않습니다." };
   }
 
   pendingByCwd.set(destination.cwd, destination);
@@ -93,7 +93,10 @@ export async function openInDagDashboard(
     (request.agentId === undefined ? null : await workspaceIdFor(client, request.agentId));
   if (!workspaceId) {
     // The destination is parked, so opening the panel by hand still lands on it.
-    return { ok: false, reason: "Could not tell which workspace to open; open the OmO DAG panel." };
+    return {
+      ok: false,
+      reason: "어느 워크스페이스를 열지 판단할 수 없습니다. OmO DAG 패널을 직접 열어 주세요.",
+    };
   }
 
   client.openPanel(DAG_PANEL_ID, { workspaceId, location: "explorer" });

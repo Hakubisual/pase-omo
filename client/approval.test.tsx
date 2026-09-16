@@ -324,13 +324,13 @@ describe("ApprovalRequestModal", () => {
       onRespond: vi.fn(),
     });
 
-    // The reported bug: the request and its options pushed "Send answer" past
+    // The reported bug: the request and its options pushed the send button past
     // the bottom edge. Only the text scrolls now, so the actions cannot move.
     const scroll = byTestId(tree, "approval-scroll");
     const scrolled = descendants(scroll.props.children).map((element) => element.props.testID);
     expect(scrolled).not.toContain("approval-actions");
-    expect(control(tree, "Send answer")).toBeDefined();
-    expect(control(scroll, "Answer input")).toBeDefined();
+    expect(control(tree, "답변 보내기")).toBeDefined();
+    expect(control(scroll, "답변 입력")).toBeDefined();
   });
 
   it("shows the request and its options in full once expanded, without touching the answer", () => {
@@ -367,13 +367,13 @@ describe("ApprovalRequestModal", () => {
     expect(textElement(expanded, label).props.numberOfLines).toBeUndefined();
 
     // Expanding is a view change: it must not rewrite what the user typed.
-    control(collapsed, "Show full text").props.onPress?.();
+    control(collapsed, "전문 보기").props.onPress?.();
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
     expect(onAnswerChange).not.toHaveBeenCalled();
-    expect(control(expanded, "Show less")).toBeDefined();
+    expect(control(expanded, "접기")).toBeDefined();
   });
 
-  it("offers \"View in session\" only when the host can navigate", () => {
+  it("offers \"세션에서 보기\" only when the host can navigate", () => {
     const onViewInSession = vi.fn();
     const props = {
       open: true,
@@ -390,12 +390,12 @@ describe("ApprovalRequestModal", () => {
     const withoutNavigation = ApprovalRequestModal(props);
     expect(
       descendants(withoutNavigation).some(
-        (element) => element.props.accessibilityLabel === "View in session",
+        (element) => element.props.accessibilityLabel === "세션에서 보기",
       ),
     ).toBe(false);
 
     const withNavigation = ApprovalRequestModal({ ...props, onViewInSession });
-    control(withNavigation, "View in session").props.onPress?.();
+    control(withNavigation, "세션에서 보기").props.onPress?.();
     expect(onViewInSession).toHaveBeenCalledTimes(1);
   });
 });

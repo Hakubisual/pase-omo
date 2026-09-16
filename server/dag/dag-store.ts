@@ -461,7 +461,7 @@ export async function locateDagDestination(
     (options.runId === undefined ? undefined : runOwner.get(options.runId)) ??
     (options.taskId === undefined ? undefined : taskOwner.get(options.taskId));
   if (!nonempty(requested)) {
-    return { destination: null, reason: "No OmO session owns this entry yet." };
+    return { destination: null, reason: "이 항목을 소유한 OmO 세션이 아직 없습니다." };
   }
 
   let sessionId = requested;
@@ -477,7 +477,7 @@ export async function locateDagDestination(
   if (!session || !sameCwd(session.cwd, catalog.cwd) || catalog.children.has(sessionId)) {
     return {
       destination: null,
-      reason: `Session ${sessionId} is not listed for this workspace anymore.`,
+      reason: `세션 ${sessionId} 은(는) 이 워크스페이스 목록에 더 이상 없습니다.`,
     };
   }
 
@@ -504,6 +504,6 @@ export async function locateDagDestination(
     },
     ...(missing.length === 0
       ? {}
-      : { reason: `Opened the session, but its ${missing.join(" and ")} is no longer recorded.` }),
+      : { reason: `세션은 열었지만 ${missing.join(", ")} 기록은 남아 있지 않습니다.` }),
   };
 }

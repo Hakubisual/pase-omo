@@ -288,7 +288,7 @@ export function ApprovalRequestBody({
     <Pressable
       key={entry.action}
       accessibilityRole="button"
-      accessibilityLabel={`Choose ${remoteSafeLabel(entry.label)}`}
+      accessibilityLabel={`${remoteSafeLabel(entry.label)} 선택`}
       disabled={submitting}
       style={[styles.option, submitting && styles.disabled]}
       onPress={() => onRespond({ behavior: "allow", action: entry.action })}
@@ -316,17 +316,17 @@ export function ApprovalRequestBody({
             {request.options.length > 0 ? (
               <View style={styles.optionList}>
                 <Text style={styles.hint} numberOfLines={1} ellipsizeMode="tail">
-                  Suggested answers
+                  추천 답변
                 </Text>
                 {request.options.map(option)}
               </View>
             ) : null}
             <TextInput
-              accessibilityLabel="Answer input"
+              accessibilityLabel="답변 입력"
               value={answer}
               editable={!submitting}
               multiline
-              placeholder="Type your answer"
+              placeholder="답변을 입력하세요"
               placeholderTextColor={theme.colors.foregroundMuted}
               style={styles.input}
               onChangeText={onAnswerChange}
@@ -342,25 +342,25 @@ export function ApprovalRequestBody({
           {onToggleExpanded === undefined ? null : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={expanded ? "Show less" : "Show full text"}
+              accessibilityLabel={expanded ? "접기" : "전문 보기"}
               accessibilityState={{ expanded }}
               style={styles.secondaryButton}
               onPress={onToggleExpanded}
             >
               <Text style={styles.secondaryText} numberOfLines={1} ellipsizeMode="tail">
-                {expanded ? "Show less" : "Show full text"}
+                {expanded ? "접기" : "전문 보기"}
               </Text>
             </Pressable>
           )}
           {onViewInSession === undefined ? null : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="View in session"
+              accessibilityLabel="세션에서 보기"
               style={styles.secondaryButton}
               onPress={onViewInSession}
             >
               <Text style={styles.secondaryText} numberOfLines={1} ellipsizeMode="tail">
-                View in session
+                세션에서 보기
               </Text>
             </Pressable>
           )}

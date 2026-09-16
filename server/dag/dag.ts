@@ -33,7 +33,7 @@ export async function locateDag(input: RpcInput<typeof locateDagRpc>): Promise<L
     sessionId = sessionId ?? origin.sessionId ?? undefined;
   }
   if (cwd === undefined) {
-    return { destination: null, reason: "This conversation has no recorded OmO workspace yet." };
+    return { destination: null, reason: "이 대화에 기록된 OmO 워크스페이스가 아직 없습니다." };
   }
   return locateDagDestination({
     cwd,

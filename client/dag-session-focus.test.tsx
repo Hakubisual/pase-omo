@@ -168,15 +168,15 @@ test("counters say which scope they describe and report the workspace separately
   // shows that the work is elsewhere.
   const bar = SessionStatsBar({
     stats: calculateSessionStats({ sessionId: "session-b", runs: [], tasks: [] }),
-    scopeLabel: "Selected session",
+    scopeLabel: "선택한 세션",
     workspace,
     theme,
     compact: false,
   });
   const text = renderedText(bar);
 
-  expect(text).toContain("Selected session");
-  expect(text).toContain("Whole workspace: 2 sessions · 2 DAG runs · 3 tasks");
+  expect(text).toContain("선택한 세션");
+  expect(text).toContain("워크스페이스 전체: 세션 2개 · DAG 실행 2개 · 태스크 3개");
 });
 
 test("the refresh button only spins for a refresh the user asked for", () => {
@@ -191,7 +191,7 @@ test("the refresh button only spins for a refresh the user asked for", () => {
   };
 
   const polling = SessionSelectorBar({ ...props, isRefreshing: false });
-  expect(renderedText(polling)).toContain("⟳ Refresh");
+  expect(renderedText(polling)).toContain("⟳ 새로고침");
   expect(
     elements(polling).some(
       (element) =>
@@ -200,5 +200,5 @@ test("the refresh button only spins for a refresh the user asked for", () => {
   ).toBe(false);
 
   const manual = SessionSelectorBar({ ...props, isRefreshing: true });
-  expect(renderedText(manual)).not.toContain("⟳ Refresh");
+  expect(renderedText(manual)).not.toContain("⟳ 새로고침");
 });

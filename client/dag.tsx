@@ -2193,7 +2193,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
     const { sessionId, listed } = destinationSelection(destination, sessions);
     consumeDagDestination(cwd);
     if (!listed) {
-      setNavigationNotice(`Session ${sessionId} is not listed in this workspace anymore.`);
+      setNavigationNotice(`세션 ${sessionId} 은(는) 이 워크스페이스 목록에 더 이상 없습니다.`);
       return;
     }
     setNavigationNotice(null);
@@ -2312,7 +2312,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           ]}
         >
           <Text style={[styles.stateTitle, { color: theme.colors.statusWarning }]}>
-            Could not open that DAG destination
+해당 DAG 위치를 열 수 없습니다
           </Text>
           <Text style={[styles.stateDesc, { color: theme.colors.foreground }]}>
             {navigationNotice}
@@ -2400,7 +2400,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           {/* Summary Stats */}
           <SessionStatsBar
             stats={stats}
-            scopeLabel={isAgentScoped ? "This agent's session" : "Selected session"}
+            scopeLabel={isAgentScoped ? "이 에이전트 세션" : "선택한 세션"}
             {...(isAgentScoped ? {} : { workspace: workspaceStats })}
             theme={theme}
             compact={compact}

@@ -16,7 +16,7 @@ export function OpenInDagButton({
   request,
   theme,
   compact,
-  label = "Open in OmO DAG",
+  label = "OmO DAG에서 열기",
 }: {
   request: DagNavigationRequest;
   theme: PluginTheme;
@@ -56,7 +56,7 @@ export function OpenInDagButton({
           style={[styles.label, { color: theme.colors.foreground, fontSize: compact ? 12 : 13 }]}
           numberOfLines={1}
         >
-          {busy ? "Opening…" : label}
+          {busy ? "여는 중…" : label}
         </Text>
       </Pressable>
       {message === null ? null : (
