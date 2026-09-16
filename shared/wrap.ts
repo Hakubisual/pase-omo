@@ -101,6 +101,44 @@ function unwrapEnvelopes(text: string): string {
 
 type Hit = { start: number; end: number; wrap: HarnessWrap | null };
 
+type Range = { start: number; end: number };
+
+/** A fence run, closed by a matching one or by the end of the message. */
+const FENCE_RE = /(^|\n)[ \t]*(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?)?(?:\n[ \t]*\2[ \t]*(?=\n|$)|$)/g;
+/** Inline span: the same number of backticks on both sides, no newline between. */
+const INLINE_CODE_RE = /(`+)(?:(?!\1)[^\n])+\1/g;
+
+/**
+ * Where the message is quoting code rather than carrying an injected block.
+ *
+ * A chat about this plugin writes `<omo-senpi-task>` inside a fence on purpose;
+ * pulling that out would leave an empty code block behind and a bar claiming
+ * the harness said it. Fences are found first and inline spans only outside
+ * them, because a lone backtick inside a fenced block is content, not a
+ * delimiter.
+ */
+function codeRanges(source: string): Range[] {
+  const fences: Range[] = [];
+  for (const match of source.matchAll(FENCE_RE)) {
+    const leading = match[1]?.length ?? 0;
+    const start = (match.index ?? 0) + leading;
+    fences.push({ start, end: start + match[0].length - leading });
+  }
+  const insideFence = (index: number): boolean =>
+    fences.some((range) => index >= range.start && index < range.end);
+  const ranges = [...fences];
+  for (const match of source.matchAll(INLINE_CODE_RE)) {
+    const start = match.index ?? 0;
+    if (insideFence(start)) continue;
+    ranges.push({ start, end: start + match[0].length });
+  }
+  return ranges;
+}
+
+function overlapsCode(hit: Hit, ranges: readonly Range[]): boolean {
+  return ranges.some((range) => hit.start < range.end && range.start < hit.end);
+}
+
 function xmlHits(source: string): Hit[] {
   const hits: Hit[] = [];
   for (const match of source.matchAll(tagRe())) {
@@ -163,11 +201,15 @@ function keepNonOverlapping(hits: Hit[]): Hit[] {
  * included, so a prompt that is only `<omo-senpi-task>…</omo-senpi-task>` does
  * not survive as a user bubble. Blocks with no inner text are stripped but not
  * wrapped — there is nothing to put on the bar. `<user_query>` is an envelope:
- * the tags disappear and the inner text is split again.
+ * the tags disappear and the inner text is split again. Anything inside a code
+ * fence or an inline span is left alone: that is a message quoting a tag, not
+ * the harness injecting one.
  */
 export function splitHarnessWraps(text: string): SplitHarness {
   const source = unwrapEnvelopes(text);
-  const kept = keepNonOverlapping([...xmlHits(source), ...systemHits(source)]);
+  const quoted = codeRanges(source);
+  const found = [...xmlHits(source), ...systemHits(source)].filter((hit) => !overlapsCode(hit, quoted));
+  const kept = keepNonOverlapping(found);
   const wraps: HarnessWrap[] = [];
   let remaining = "";
   let last = 0;
