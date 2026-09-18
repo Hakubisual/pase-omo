@@ -28,6 +28,10 @@ const CAPABILITIES = [
   "session.configure",
   "session.list",
   "session.persistence",
+  // Child sessions for `task()` runs. The daemon rejects a child whose parent
+  // did not negotiate this - "Provider parent session did not negotiate
+  // session.subsession" - so the subagent rows depend on it being offered here.
+  "session.subsession",
   "permission",
 ] as const;
 
