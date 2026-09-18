@@ -140,7 +140,7 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
     item: {
       type: "assistant_message",
       id: `${sessionId}-result`,
-      text: failed(record) ? `Task failed (${status})` : `Task ${status}`,
+      text: failed(record) ? `작업 실패 (${status})` : `작업 ${status}`,
     },
   });
   events.push({
@@ -148,7 +148,7 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
     sessionId,
     turnId: `${sessionId}-run`,
     state: failed(record) ? "failed" : "completed",
-    ...(failed(record) ? { error: { message: `Task ${status}` } } : {}),
+    ...(failed(record) ? { error: { message: `작업 실패 (${status})` } } : {}),
   });
   events.push({ type: "session.closed", sessionId });
   state.closed = true;
