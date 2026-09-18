@@ -14,6 +14,7 @@ import type { OmoLaunch } from "./omo-cli.js";
 import { type OmoEvent, OmoProcess } from "./omo-process.js";
 import { todoItems, toolCallDetail, toolResultText } from "./tool-detail.js";
 import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-publish.js";
+import { lastPublishedTodo, rememberPublishedTodo } from "./todo-memory.js";
 import { visibleTimelineItems } from "./text-wrap.js";
 
 type Json = Record<string, unknown>;
@@ -282,10 +283,24 @@ export class OmoSession {
     for (const item of visibleTimelineItems(role, id, text, extra)) this.item(item);
   }
 
+  /**
+   * Key the drawn-card memory belongs to.
+   *
+   * The session file, when OmO has told us one: a Paseo session id is new on
+   * every reopen of the same conversation, which is exactly the case that drew
+   * the duplicate card.
+   */
+  private get todoMemoryKey(): string {
+    const file = this.durableSessionFile;
+    return file === undefined ? this.sessionId : file.replace(/\\/g, "/").toLowerCase();
+  }
+
   /** Spawn, wait for the agent session to exist, and publish the opened state. */
   async open(requestId: string, history: "replay" | "skip"): Promise<void> {
     this.proc.start();
     this.state = await this.proc.call<OmoStateRecord>("get_state", {}, 240_000);
+    // What the chat already shows, so a reopened session does not redraw it.
+    this.lastTodoSignature = await lastPublishedTodo(this.todoMemoryKey);
     await this.refreshCatalog();
 
     // Hoisted: under exactOptionalPropertyTypes a second call to persistence()
@@ -686,9 +701,14 @@ export class OmoSession {
     // its own timeline row, and the composer already counts the live progress.
     const finalTodo = finalTodoPublication(this.lastTodoSignature, this.pendingTodoItems);
     this.pendingTodoItems = undefined;
-    if (finalTodo.publish && finalTodo.items !== undefined) {
-      this.lastTodoSignature = finalTodo.signature;
+    if (finalTodo.publish && finalTodo.items !== undefined && finalTodo.signature !== undefined) {
+      const signature = finalTodo.signature;
+      this.lastTodoSignature = signature;
       this.item({ type: "todo", id: this.todoItemId, items: finalTodo.items });
+      void rememberPublishedTodo(this.todoMemoryKey, signature).catch((error: unknown) => {
+        // Losing the note costs one duplicate card after a reload, not the card.
+        this.options.log(`todo card memory write failed: ${describe(error)}`);
+      });
     }
 
     const turnId = this.activeTurnId;
