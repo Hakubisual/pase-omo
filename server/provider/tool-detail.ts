@@ -32,6 +32,18 @@ function args(value: unknown): Json {
 }
 
 /**
+ * Task id out of a `task` result.
+ *
+ * The tool answers in prose ("Started task … (st_01a0b4c9, running)"), and a
+ * batch spawn names several; the first one is the row's own child. Ids are
+ * `st_` plus hex, so the pattern cannot swallow a neighbouring word.
+ */
+export function spawnedTaskId(output: string | undefined): string | undefined {
+  const match = /\bst_[0-9a-f]{6,}\b/i.exec(output ?? "");
+  return match?.[0];
+}
+
+/**
  * Map an OmO tool call onto Paseo's rich tool-call renderers.
  *
  * Names come from omo's builtin tool surface; anything unrecognised (including
@@ -103,12 +115,17 @@ export function toolCallDetail(toolName: string, rawArgs: unknown, output?: stri
     }
     case "task": {
       const description = str(input.task_summary) ?? str(input.description) ?? str(input.prompt, 400);
+      // The spawned task's own id, which is also the id the provider announces
+      // the child session under - so the row's "session" link lands on the
+      // subagent the panel shows rather than nothing.
+      const childSessionId = spawnedTaskId(output);
       return {
         type: "sub_agent",
         ...(str(input.category) || str(input.subagent_type)
           ? { subAgentType: (str(input.category) ?? str(input.subagent_type)) as string }
           : {}),
         ...(description ? { description } : {}),
+        ...(childSessionId ? { childSessionId } : {}),
         log: output ?? "",
       };
     }

@@ -15,6 +15,7 @@ import { type OmoEvent, OmoProcess } from "./omo-process.js";
 import { todoItems, toolCallDetail, toolResultText } from "./tool-detail.js";
 import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-publish.js";
 import { lastPublishedTodo, rememberPublishedTodo } from "./todo-memory.js";
+import { readTaskRecords, taskChildEvents, type TaskState } from "./task-watch.js";
 import { visibleTimelineItems } from "./text-wrap.js";
 
 type Json = Record<string, unknown>;
@@ -27,6 +28,16 @@ const STREAM_FLUSH_MS = 60;
  * where the process is already unreachable.
  */
 const PROCESS_EXIT_GRACE_MS = 5_000;
+
+/**
+ * How often the task records on disk are re-read.
+ *
+ * Fast while a turn is running, because that is when subagents are spawned and
+ * a live row is worth having; slow otherwise, because a background task can
+ * outlive the turn that started it and still deserves its closing status.
+ */
+const TASK_POLL_ACTIVE_MS = 2_000;
+const TASK_POLL_IDLE_MS = 15_000;
 
 function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -185,6 +196,10 @@ export class OmoSession {
   private closed = false;
   /** True between `suspend()` and `resume()`, when no child process exists. */
   private suspended = false;
+  /** What has already been published for each `task()` run, keyed by task id. */
+  private readonly taskStates = new Map<string, TaskState>();
+  private taskTimer: ReturnType<typeof setTimeout> | null = null;
+  private taskScanning = false;
 
   constructor(options: OmoSessionOptions) {
     this.options = options;
@@ -323,6 +338,53 @@ export class OmoSession {
     this.publishCommands();
     if (history === "replay") await this.replay();
     this.emit({ type: "session.ready", requestId, sessionId: this.sessionId });
+    this.scheduleTaskScan(TASK_POLL_ACTIVE_MS);
+  }
+
+  // ------------------------------------------------------------- subagents
+
+  /**
+   * Publishes this session's `task()` runs as child sessions.
+   *
+   * OmO writes a record per spawned task; the daemon turns a child
+   * `session.opened` into the rows behind the subagent panel and the agent
+   * tracks. Polling is how a background task that finishes after its turn still
+   * gets its closing status.
+   */
+  private async scanTasks(): Promise<void> {
+    if (this.closed || this.taskScanning) return;
+    const cwd = this.state.cwd ?? this.config.cwd;
+    const omoSessionId = this.state.sessionId;
+    if (!cwd || !omoSessionId) return;
+    this.taskScanning = true;
+    try {
+      for (const record of await readTaskRecords(cwd, omoSessionId)) {
+        if (this.closed) return;
+        const { events, state } = taskChildEvents({
+          record,
+          parentSessionId: this.sessionId,
+          cwd,
+          previous: this.taskStates.get(record.task_id),
+        });
+        this.taskStates.set(record.task_id, state);
+        for (const event of events) this.emit(event);
+      }
+    } catch (error) {
+      this.options.log(`task scan failed: ${describe(error)}`);
+    } finally {
+      this.taskScanning = false;
+    }
+  }
+
+  private scheduleTaskScan(delayMs: number): void {
+    if (this.closed || this.taskTimer !== null) return;
+    this.taskTimer = setTimeout(() => {
+      this.taskTimer = null;
+      void this.scanTasks().finally(() => {
+        this.scheduleTaskScan(this.activeTurnId === null ? TASK_POLL_IDLE_MS : TASK_POLL_ACTIVE_MS);
+      });
+    }, delayMs);
+    this.taskTimer.unref?.();
   }
 
   private persistence(): { version: number; data: { sessionFile: string } } | undefined {
@@ -626,6 +688,10 @@ export class OmoSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    if (this.taskTimer !== null) {
+      clearTimeout(this.taskTimer);
+      this.taskTimer = null;
+    }
     this.unregisterSession();
     for (const timer of this.flushTimers.values()) clearTimeout(timer);
     this.flushTimers.clear();
