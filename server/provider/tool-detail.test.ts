@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { TodoRowSchema, toTodoRow } from "../../shared/todo.js";
-import { todoItems } from "./tool-detail.js";
+import { spawnedTaskId, todoItems, toolCallDetail } from "./tool-detail.js";
 
 /**
  * The OmO `todo` tool (a senpi builtin) returns
@@ -142,5 +142,37 @@ describe("todoItems fallback to the arguments", () => {
     expect(todoItems({ op: "view" }, { content: [], details: { op: "view", phases: [] } })).toBeUndefined();
     expect(todoItems({ op: "view" })).toBeUndefined();
     expect(todoItems(undefined, undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * A subagent row that names no session is a dead end: the run it describes is
+ * recorded under that id, and the provider announces the child session under it
+ * too, so the link is the only way back to what the child did.
+ */
+describe("task tool detail", () => {
+  it("carries the spawned task id as the child session", () => {
+    const detail = toolCallDetail(
+      "task",
+      { category: "quick", task_summary: "Check the release notes" },
+      "Started task Check the release notes (st_01a0b4c9, running). Completion is delivered.",
+    );
+
+    expect(detail).toMatchObject({
+      type: "sub_agent",
+      subAgentType: "quick",
+      description: "Check the release notes",
+      childSessionId: "st_01a0b4c9",
+    });
+  });
+
+  it("takes the first id when a batch spawns several", () => {
+    expect(spawnedTaskId("Started st_01a0b4c9 and st_01a0b4d0")).toBe("st_01a0b4c9");
+  });
+
+  it("leaves the field out when the result names no task", () => {
+    const detail = toolCallDetail("task", { description: "no id yet" }, undefined);
+    expect(detail).not.toHaveProperty("childSessionId");
+    expect(spawnedTaskId("started, but nothing to key on")).toBeUndefined();
   });
 });
