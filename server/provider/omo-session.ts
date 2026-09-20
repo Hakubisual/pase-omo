@@ -8,7 +8,12 @@ import type {
   ProviderThinkingOption,
   ProviderTimelineItem,
 } from "@getpaseo/plugin/server/provider";
-import type { ApprovalResponse, PendingApprovalRequest } from "../../shared/approval.js";
+import {
+  ApprovalQuestionSchema,
+  ApprovalResponseSchema,
+  type ApprovalResponse,
+  type PendingApprovalRequest,
+} from "../../shared/approval.js";
 import { omoSessionRegistry } from "./session-registry.js";
 import type { OmoLaunch } from "./omo-cli.js";
 import { type OmoEvent, OmoProcess } from "./omo-process.js";
@@ -152,8 +157,9 @@ interface PendingUi {
   title: string;
   /** Option label per action id, for select and question. */
   optionByAction: Map<string, string>;
-  /** Question key used by `extension_ui_response.answers`. */
+  /** Legacy single-question key used by `extension_ui_response.answers`. */
   questionKey?: string;
+  questions?: PendingApprovalRequest["questions"];
 }
 
 export interface OmoSessionOptions {
@@ -277,6 +283,7 @@ export class OmoSession {
       title: pending.title,
       options: [...pending.optionByAction].map(([action, label]) => ({ action, label })),
       ...(pending.questionKey ? { questionKey: pending.questionKey } : {}),
+      ...(pending.questions ? { questions: pending.questions } : {}),
     }));
   }
 
@@ -633,12 +640,13 @@ export class OmoSession {
   respondToUiRequest(permissionId: string, response: ApprovalResponse): void {
     const pending = this.pendingUi.get(permissionId);
     if (!pending) throw new Error(`Unknown pending OmO UI request: ${permissionId}`);
+    response = ApprovalResponseSchema.parse(response);
 
     let wireResponse: Record<string, unknown>;
     if (response.behavior === "deny") {
       wireResponse = { type: "extension_ui_response", id: permissionId, cancelled: true };
     } else if (pending.method === "confirm") {
-      if ("action" in response || "answer" in response) {
+      if ("action" in response || "answer" in response || "answers" in response) {
         throw new Error(`Confirmation request ${permissionId} only accepts allow or deny`);
       }
       wireResponse = { type: "extension_ui_response", id: permissionId, confirmed: true };
@@ -647,6 +655,27 @@ export class OmoSession {
       const label = pending.optionByAction.get(response.action);
       if (label === undefined) throw new Error(`Unknown action for OmO UI request ${permissionId}: ${response.action}`);
       wireResponse = { type: "extension_ui_response", id: permissionId, value: label };
+    } else if ("answers" in response) {
+      for (const [key, answer] of Object.entries(response.answers)) {
+        const question = pending.questions?.find((entry) => entry.id === key);
+        if (!question) throw new Error(`알 수 없는 질문입니다: ${key}`);
+        if (!question.multiSelect && answer.selected.length > 1) {
+          throw new Error(`하나의 항목만 선택해 주세요: ${key}`);
+        }
+        for (const label of answer.selected) {
+          if (!question.options.some((option) => option.label === label)) {
+            throw new Error(`알 수 없는 선택 항목입니다: ${key}: ${label}`);
+          }
+        }
+      }
+      wireResponse = {
+        type: "extension_ui_response",
+        id: permissionId,
+        answers: response.answers,
+        ...(response.comment !== undefined ? { comment: response.comment } : {}),
+      };
+    } else if ((pending.questions?.length ?? 1) !== 1) {
+      throw new Error("여러 질문에는 질문별 답변을 제출해 주세요.");
     } else if ("action" in response) {
       const label = pending.optionByAction.get(response.action);
       if (label === undefined) throw new Error(`Unknown action for OmO UI request ${permissionId}: ${response.action}`);
@@ -676,26 +705,18 @@ export class OmoSession {
 
   respondToPermission(permissionId: string, response: ProviderPermissionResponse): void {
     const pending = this.pendingUi.get(permissionId);
-    this.pendingUi.delete(permissionId);
     if (!pending) return;
     if (response.behavior === "deny") {
-      this.proc.notify({ type: "extension_ui_response", id: permissionId, cancelled: true });
+      this.respondToUiRequest(permissionId, { behavior: "deny" });
+    } else if (response.updatedInput !== undefined) {
+      this.respondToUiRequest(permissionId, ApprovalResponseSchema.parse({ ...response.updatedInput, behavior: "allow" }));
     } else if (pending.method === "confirm") {
-      this.proc.notify({ type: "extension_ui_response", id: permissionId, confirmed: true });
+      this.respondToUiRequest(permissionId, { behavior: "allow" });
     } else {
-      const label = response.selectedActionId ? pending.optionByAction.get(response.selectedActionId) : undefined;
-      if (pending.method === "select") {
-        this.proc.notify({ type: "extension_ui_response", id: permissionId, value: label ?? "" });
-      } else {
-        const key = pending.questionKey ?? "answer";
-        this.proc.notify({
-          type: "extension_ui_response",
-          id: permissionId,
-          answers: { [key]: { selected: label ? [label] : [] } },
-        });
-      }
+      this.respondToUiRequest(permissionId, response.selectedActionId !== undefined
+        ? { behavior: "allow", action: response.selectedActionId }
+        : { behavior: "allow" });
     }
-    this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId });
   }
 
   close(): void {
@@ -1063,28 +1084,31 @@ export class OmoSession {
       return;
     }
     if (method === "question") {
-      const questions = Array.isArray(event.questions) ? event.questions : [];
-      const first = questions.find((q): q is Json => typeof q === "object" && q !== null);
+      const questions = ApprovalQuestionSchema.array().parse(event.questions).map((question) => ({
+        ...question,
+        options: question.options.map(({ label, description }) => ({
+          label,
+          ...(description !== undefined ? { description } : {}),
+        })),
+      }));
+      const first = questions[0];
       if (!first) {
         this.proc.notify({ type: "extension_ui_response", id, cancelled: true });
         return;
       }
-      const rawOptions = Array.isArray(first.options) ? first.options : [];
       const optionByAction = new Map<string, string>();
-      const actions = rawOptions.slice(0, 8).flatMap((option, index) => {
-        if (typeof option !== "object" || option === null) return [];
-        const label = (option as Json).label;
-        if (typeof label !== "string") return [];
+      const actions = first.options.map(({ label }, index) => {
         const actionId = `option-${index}`;
         optionByAction.set(actionId, label);
-        return [{ id: actionId, label, behavior: "allow" as const }];
+        return { id: actionId, label, behavior: "allow" as const };
       });
-      const title = String(first.question ?? first.header ?? "OmO has a question");
+      const title = first.question || first.header || "OmO 질문";
       this.pendingUi.set(id, {
         method: "question",
         title,
         optionByAction,
-        ...(typeof first.id === "string" ? { questionKey: first.id } : {}),
+        questionKey: first.id,
+        questions,
       });
       this.emit({
         type: "session.permission",
@@ -1093,9 +1117,13 @@ export class OmoSession {
           id,
           name: "question",
           kind: "question",
-          title: String(first.header ?? "OmO has a question"),
-          description: String(first.question ?? ""),
-          actions: [...actions, { id: "deny", label: "Skip", behavior: "deny" as const }],
+          title: first.header || "OmO 질문",
+          description: first.question,
+          input: { questions },
+          actions: [
+            ...(questions.length === 1 && !first.multiSelect ? actions : []),
+            { id: "deny", label: "건너뛰기", behavior: "deny" as const },
+          ],
         },
       });
       return;

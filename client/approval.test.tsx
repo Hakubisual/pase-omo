@@ -4,7 +4,7 @@ import { Dimensions } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PendingApprovalRequest, SubmitApprovalInput } from "../shared/approval.js";
-import { ApprovalRequestModal, createApprovalSubmitter } from "./approval.js";
+import { ApprovalRequestModal, createApprovalSubmitter, type ApprovalDraft } from "./approval.js";
 
 const theme: PluginTheme = {
   colors: {
@@ -24,6 +24,10 @@ const theme: PluginTheme = {
 
 type ElementProps = {
   accessibilityLabel?: string;
+  accessibilityRole?: string;
+  accessibilityState?: { checked?: boolean };
+  disabled?: boolean;
+  value?: string;
   children?: ReactNode;
   ellipsizeMode?: string;
   numberOfLines?: number;
@@ -82,7 +86,7 @@ function request(partial: Partial<PendingApprovalRequest> & Pick<PendingApproval
 }
 
 function harness(pending: PendingApprovalRequest) {
-  let answer = "";
+  let answer: ApprovalDraft = "";
   const rpc = vi.fn(async (_input: SubmitApprovalInput) => ({ submitted: true as const }));
   const onOpenChange = vi.fn<(open: boolean) => void>();
   const submit = createApprovalSubmitter({
@@ -187,6 +191,71 @@ describe("ApprovalRequestModal", () => {
       requestId: "question-1",
       response: { behavior: "allow", answer: "ap-northeast-2" },
     });
+  });
+
+  it("keeps all questions editable and sends selections, text and comment in one RPC", async () => {
+    const ui = harness(request({
+      id: "questions", method: "question", title: "Deployment",
+      questions: [
+        { id: "region", header: "Region", question: "Choose a region", multiSelect: false,
+          options: [{ label: "Seoul", description: "Primary" }, { label: "Tokyo" }] },
+        { id: "features", header: "Features", question: "Choose features", multiSelect: true,
+          options: Array.from({ length: 10 }, (_, index) => ({ label: `feature-${index}` })) },
+        { id: "notes", header: "Notes", question: "Any notes?", multiSelect: false, options: [] },
+      ],
+    }));
+
+    expect(control(ui.render(), "답변 보내기").props.disabled).toBe(true);
+    await press(ui.render(), "Region: Seoul 선택");
+    await press(ui.render(), "Region: Tokyo 선택");
+    expect(control(ui.render(), "Region: Seoul 선택").props.accessibilityState?.checked).toBe(false);
+    expect(control(ui.render(), "Region: Tokyo 선택").props.accessibilityState?.checked).toBe(true);
+    expect(control(ui.render(), "Region: Tokyo 선택").props.accessibilityRole).toBe("radio");
+    await press(ui.render(), "Features: feature-0 선택");
+    await press(ui.render(), "Features: feature-9 선택");
+    await press(ui.render(), "Features: feature-4 선택");
+    await press(ui.render(), "Features: feature-4 선택");
+    expect(control(ui.render(), "Features: feature-4 선택").props.accessibilityState?.checked).toBe(false);
+    expect(control(ui.render(), "Features: feature-9 선택").props.accessibilityRole).toBe("checkbox");
+    typeInto(ui.render(), "Features 답변 입력", "  Additional detail\n");
+    typeInto(ui.render(), "Notes 답변 입력", "  Keep staging\n");
+    typeInto(ui.render(), "추가 의견 입력", "  Review first\n");
+    expect(control(ui.render(), "Features 답변 입력").props.value).toBe("  Additional detail\n");
+    expect(ui.rpc).not.toHaveBeenCalled();
+
+    await press(ui.render(), "답변 보내기");
+    await press(ui.render(), "답변 보내기");
+    expect(ui.rpc).toHaveBeenCalledTimes(1);
+    expect(ui.rpc).toHaveBeenCalledWith({
+      agentId: "agent-1", requestId: "questions",
+      response: { behavior: "allow", answers: {
+        region: { selected: ["Tokyo"] },
+        features: { selected: ["feature-0", "feature-9"], text: "  Additional detail\n" },
+        notes: { selected: [], text: "  Keep staging\n" },
+      }, comment: "  Review first\n" },
+    });
+  });
+
+  it("permits comment-only and partial replies but not whitespace-only drafts", async () => {
+    const pending = request({ id: "partial", method: "question", title: "Questions", questions: [
+      { id: "one", header: "One", question: "First", multiSelect: false, options: [] },
+      { id: "two", header: "Two", question: "Second", multiSelect: false, options: [] },
+    ] });
+    const ui = harness(pending);
+    typeInto(ui.render(), "One 답변 입력", "  ");
+    typeInto(ui.render(), "추가 의견 입력", "\n");
+    expect(control(ui.render(), "답변 보내기").props.disabled).toBe(true);
+    typeInto(ui.render(), "추가 의견 입력", "Only a comment");
+    expect(control(ui.render(), "답변 보내기").props.disabled).toBe(false);
+    await press(ui.render(), "답변 보내기");
+    expect(ui.rpc).toHaveBeenCalledWith({ agentId: "agent-1", requestId: "partial",
+      response: { behavior: "allow", answers: {}, comment: "Only a comment" } });
+
+    const partial = harness(pending);
+    typeInto(partial.render(), "Two 답변 입력", "Second only");
+    await press(partial.render(), "답변 보내기");
+    expect(partial.rpc).toHaveBeenCalledWith({ agentId: "agent-1", requestId: "partial",
+      response: { behavior: "allow", answers: { two: { selected: [], text: "Second only" } } } });
   });
 
   it("shortens daemon-local absolute paths received through RPC data", () => {

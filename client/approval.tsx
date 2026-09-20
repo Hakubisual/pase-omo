@@ -163,6 +163,7 @@ function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: numbe
       backgroundColor: theme.colors.surface1,
       overflow: "hidden",
     },
+    selectedOption: { borderColor: theme.colors.accent, backgroundColor: theme.colors.surface2 },
     optionText: {
       maxWidth: "100%",
       flexShrink: 1,
@@ -236,16 +237,24 @@ function createStyles(theme: PluginTheme, compact: boolean, viewportWidth: numbe
   });
 }
 
+type StructuredApprovalResponse = Extract<ApprovalResponse, { answers: unknown }>;
+
+/** One controlled draft shared by the modal and composer popover entry points. */
+export type ApprovalDraft = string | {
+  answers: StructuredApprovalResponse["answers"];
+  comment: string;
+};
+
 export interface ApprovalRequestModalProps {
   open: boolean;
   request: PendingApprovalRequest;
-  answer: string;
+  answer: ApprovalDraft;
   submitting: boolean;
   theme: PluginTheme;
   layout: PluginHostProps["layout"];
   /** Opens the conversation this request came from. Absent on hosts without navigation. */
   onViewInSession?: () => void;
-  onAnswerChange(value: string): void;
+  onAnswerChange(value: ApprovalDraft): void;
   onOpenChange(open: boolean): void;
   onRespond(response: ApprovalResponse): void | Promise<unknown>;
 }
@@ -271,7 +280,24 @@ export function ApprovalRequestBody({
   onRespond,
 }: ApprovalRequestBodyProps): React.JSX.Element {
   const styles = createStyles(theme, layout.compact, Dimensions.get("window").width);
-  const answerReady = answer.trim().length > 0;
+  const questions = request.method === "question" ? request.questions : undefined;
+  const draft = typeof answer === "string" ? { answers: {}, comment: "" } : answer;
+  const legacyAnswer = typeof answer === "string" ? answer : "";
+  const answers = Object.fromEntries(
+    (questions ?? []).flatMap((question) => {
+      const value = draft.answers[question.id];
+      if (!value || (value.selected.length === 0 && !value.text?.trim())) return [];
+      return [[question.id, {
+        selected: value.selected,
+        ...(value.text?.trim() ? { text: value.text } : {}),
+      }]];
+    }),
+  );
+  const answerReady = questions
+    ? Object.keys(answers).length > 0 || draft.comment.trim().length > 0
+    : legacyAnswer.trim().length > 0;
+  const updateQuestion = (id: string, value: StructuredApprovalResponse["answers"][string]) =>
+    onAnswerChange({ ...draft, answers: { ...draft.answers, [id]: value } });
   const displayTitle = remoteSafeLabel(request.title);
   // Nothing is clipped: the request and its options own a scroller of their own
   // and the answer controls sit outside it, so a long question costs scrolling
@@ -300,7 +326,65 @@ export function ApprovalRequestBody({
       >
         <Text style={styles.title}>{displayTitle}</Text>
 
-        {request.method === "question" ? (
+        {questions ? (
+          <>
+            {questions.map((question) => {
+              const value = draft.answers[question.id] ?? { selected: [] };
+              const heading = remoteSafeLabel(question.header || question.question);
+              return (
+                <View key={question.id} testID={`approval-question-${question.id}`} style={styles.optionList}>
+                  <Text style={styles.title}>{heading}</Text>
+                  <Text style={styles.optionText}>{remoteSafeLabel(question.question)}</Text>
+                  {question.options.length > 0 ? (
+                    <Text style={styles.hint}>{question.multiSelect ? "여러 항목 선택 가능" : "한 항목 선택"}</Text>
+                  ) : null}
+                  {question.options.map((entry) => {
+                    const checked = value.selected.includes(entry.label);
+                    return (
+                      <Pressable
+                        key={entry.label}
+                        accessibilityRole={question.multiSelect ? "checkbox" : "radio"}
+                        accessibilityLabel={`${heading}: ${remoteSafeLabel(entry.label)} 선택`}
+                        accessibilityState={{ checked, disabled: submitting }}
+                        disabled={submitting}
+                        style={[styles.option, checked && styles.selectedOption, submitting && styles.disabled]}
+                        onPress={() => updateQuestion(question.id, {
+                          ...value,
+                          selected: checked
+                            ? value.selected.filter((label) => label !== entry.label)
+                            : question.multiSelect ? [...value.selected, entry.label] : [entry.label],
+                        })}
+                      >
+                        <Text style={styles.optionText}>{checked ? "✓ " : ""}{remoteSafeLabel(entry.label)}</Text>
+                        {entry.description ? <Text style={styles.hint}>{remoteSafeLabel(entry.description)}</Text> : null}
+                      </Pressable>
+                    );
+                  })}
+                  <TextInput
+                    accessibilityLabel={`${heading} 답변 입력`}
+                    value={value.text ?? ""}
+                    editable={!submitting}
+                    multiline
+                    placeholder="답변을 입력하세요"
+                    placeholderTextColor={theme.colors.foregroundMuted}
+                    style={styles.input}
+                    onChangeText={(text) => updateQuestion(question.id, { ...value, text })}
+                  />
+                </View>
+              );
+            })}
+            <TextInput
+              accessibilityLabel="추가 의견 입력"
+              value={draft.comment}
+              editable={!submitting}
+              multiline
+              placeholder="추가 의견 (선택 사항)"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              style={styles.input}
+              onChangeText={(comment) => onAnswerChange({ ...draft, comment })}
+            />
+          </>
+        ) : request.method === "question" ? (
           <>
             {request.options.length > 0 ? (
               <View style={styles.optionList}>
@@ -312,7 +396,7 @@ export function ApprovalRequestBody({
             ) : null}
             <TextInput
               accessibilityLabel="답변 입력"
-              value={answer}
+              value={legacyAnswer}
               editable={!submitting}
               multiline
               placeholder="답변을 입력하세요"
@@ -361,7 +445,9 @@ export function ApprovalRequestBody({
             accessibilityLabel="답변 보내기"
             disabled={submitting || !answerReady}
             style={[styles.button, styles.allowButton, (submitting || !answerReady) && styles.disabled]}
-            onPress={() => onRespond({ behavior: "allow", answer: answer.trim() })}
+            onPress={() => onRespond(questions
+              ? { behavior: "allow", answers, ...(draft.comment.trim() ? { comment: draft.comment } : {}) }
+              : { behavior: "allow", answer: legacyAnswer.trim() })}
           >
             <Text style={styles.allowText} numberOfLines={1} ellipsizeMode="tail">
               {submitting ? "전송 중" : "답변 보내기"}
@@ -442,12 +528,12 @@ export interface ApprovalPopupProps {
 
 export interface ApprovalExchange {
   request: PendingApprovalRequest | undefined;
-  answer: string;
+  answer: ApprovalDraft;
   submitting: boolean;
   /** What to say when there is no request to show. */
   statusText: string;
   failed: boolean;
-  setAnswer(value: string): void;
+  setAnswer(value: ApprovalDraft): void;
   respond(response: ApprovalResponse): Promise<void>;
 }
 
@@ -468,7 +554,7 @@ export function useApprovalExchange(
   const queryClient = useQueryClient();
   const toast = useToast();
   const request = query.data?.requests[0];
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState<ApprovalDraft>("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
