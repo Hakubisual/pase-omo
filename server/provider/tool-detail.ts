@@ -49,7 +49,7 @@ export function spawnedTaskId(output: string | undefined): string | undefined {
  * Names come from omo's builtin tool surface; anything unrecognised (including
  * MCP tools, which arrive namespaced) falls back to a readable plain-text row.
  */
-export function toolCallDetail(toolName: string, rawArgs: unknown, output?: string): ProviderToolCallDetail {
+export function toolCallDetail(toolName: string, rawArgs: unknown, output?: string, result?: unknown): ProviderToolCallDetail {
   const input = args(rawArgs);
   const name = toolName.toLowerCase();
 
@@ -118,7 +118,10 @@ export function toolCallDetail(toolName: string, rawArgs: unknown, output?: stri
       // The spawned task's own id, which is also the id the provider announces
       // the child session under - so the row's "session" link lands on the
       // subagent the panel shows rather than nothing.
-      const childSessionId = spawnedTaskId(output);
+      const resultTaskId = str(args(args(result).details).task_id);
+      const childSessionId = resultTaskId && /^st_[A-Za-z0-9_-]{1,253}$/.test(resultTaskId)
+        ? resultTaskId
+        : spawnedTaskId(output);
       return {
         type: "sub_agent",
         ...(str(input.category) || str(input.subagent_type)

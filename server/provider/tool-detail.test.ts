@@ -159,6 +159,11 @@ describe("todoItems fallback to the arguments", () => {
  * too, so the link is the only way back to what the child did.
  */
 describe("task tool detail", () => {
+  it("uses the structured task id instead of an unrelated id in result text", () => {
+    const detail = toolCallDetail("task", {}, "Related st_abcdef01", { details: { task_id: "st_abcdef02" } });
+    expect(detail).toMatchObject({ type: "sub_agent", childSessionId: "st_abcdef02" });
+  });
+
   it("carries the spawned task id as the child session", () => {
     const detail = toolCallDetail(
       "task",

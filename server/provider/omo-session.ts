@@ -961,7 +961,7 @@ export class OmoSession {
         id,
         callId,
         name: toolName,
-        detail: toolCallDetail(toolName, args, output),
+        detail: toolCallDetail(toolName, args, output, event.result),
         ...(failed
           ? { status: "failed" as const, error: (output ?? "Tool call failed") as string }
           : { status: "completed" as const, error: null }),
