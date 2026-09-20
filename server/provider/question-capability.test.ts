@@ -10,8 +10,8 @@ import { withQuestionCapability } from "./omo-session.js";
  */
 describe("withQuestionCapability", () => {
   it("advertises the capability when nothing else does", () => {
-    expect(withQuestionCapability(undefined)).toBe("question");
-    expect(withQuestionCapability("")).toBe("question");
+    expect(withQuestionCapability(undefined)).toBe("question,extension_events");
+    expect(withQuestionCapability("")).toBe("question,extension_events");
   });
 
   it("keeps capabilities the environment already asked for", () => {
@@ -21,7 +21,7 @@ describe("withQuestionCapability", () => {
   });
 
   it("does not advertise it twice", () => {
-    expect(withQuestionCapability("question")).toBe("question");
+    expect(withQuestionCapability("question")).toBe("question,extension_events");
     expect(withQuestionCapability("extension_events,question")).toBe("extension_events,question");
   });
 

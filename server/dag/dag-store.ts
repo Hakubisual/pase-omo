@@ -5,6 +5,7 @@ import type { DagRun, DagSession, DagStatus, DagTask } from "../../shared/dag.js
 import type { LocateDagPayload } from "../../shared/navigate.js";
 import { readSessionHeader, readSessionHeaders, sameCwd, type SessionHeader, sessionsDir } from "../provider/omo-store.js";
 import { taskStateDir as resolveTaskStateDir } from "../task-state.js";
+import { liveTasks } from "./live-tasks.js";
 
 /**
  * Error codes the DAG RPCs expose. Corrupt source data must surface as a
@@ -39,7 +40,7 @@ const STATUSES = new Set<DagStatus>([
   "cancelled",
   "skipped",
 ]);
-const TERMINAL = new Set(["completed", "error", "cancelled", "interrupted", "lost", "failed"]);
+const TERMINAL = new Set(["completed", "error", "cancelled", "interrupted", "lost", "failed", "skipped"]);
 
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 
@@ -91,7 +92,7 @@ export function normalizeTask(raw: unknown): DagTask | undefined {
     ...pick("agent", text(record.agent_type, 128) ?? text(record.category, 128)),
     ...pick("model", text(object(record.resolved_model)?.display, 256) ?? text(record.model, 256)),
     ...pick("status", status),
-    ...pick("startedAt", iso(live?.started_at) ?? iso(record.created_at)),
+    ...pick("startedAt", iso(live?.started_at) ?? iso(record.started_at) ?? iso(record.created_at)),
     ...pick("completedAt", iso(record.terminal_at) ?? (terminal ? iso(record.updated_at) : undefined)),
     ...pick("progress", terminal ? undefined : (text(progress, 512) ?? text(live?.activity, 512))),
     ...pick("turns", count(live?.turns) ?? count(stats?.turns)),
@@ -352,6 +353,32 @@ function project(catalog: Catalog, sessionId: string): { tasks: DagTask[]; runs:
     } else if (task.status !== undefined) {
       delete merged.completedAt;
     }
+    entries.set(task.id, {
+      ...previous,
+      task: merged,
+      parentSessionId,
+      ...(updatedAt ? { updatedAt } : {}),
+      ...(nonempty(raw.child_session_id) ? { childSessionId: raw.child_session_id } : {}),
+    });
+  }
+
+  for (const { parentSessionId, raw, receivedAt } of liveTasks.records(catalog.cwd)) {
+    const task = normalizeTask(raw);
+    if (!task) continue;
+    const previous = entries.get(task.id);
+    // An event cannot steal a durable task from another session, or regress a
+    // newer persisted update. Missing disk records are valid live-only tasks.
+    if (previous && previous.parentSessionId !== parentSessionId) continue;
+    const updatedAt = iso(raw.updated_at);
+    const freshness = updatedAt ?? iso(receivedAt);
+    if (previous?.updatedAt && freshness && freshness < previous.updatedAt) continue;
+    if (previous?.task.status && TERMINAL.has(previous.task.status) && !TERMINAL.has(task.status ?? "") &&
+        (!updatedAt || !previous.updatedAt || updatedAt <= previous.updatedAt)) continue;
+    const merged = { ...previous?.task, ...task };
+    // A present task is a replacement progress projection, not a text delta.
+    // Absence of progress must remove the disk/previous event's stale line.
+    if (task.progress === undefined) delete merged.progress;
+    if (task.status && !TERMINAL.has(task.status)) delete merged.completedAt;
     entries.set(task.id, {
       ...previous,
       task: merged,

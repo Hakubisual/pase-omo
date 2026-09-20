@@ -17,6 +17,7 @@ import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-pub
 import { lastPublishedTodo, rememberPublishedTodo } from "./todo-memory.js";
 import { readTaskRecords, taskChildEvents, type TaskState } from "./task-watch.js";
 import { visibleTimelineItems } from "./text-wrap.js";
+import { liveTasks } from "../dag/live-tasks.js";
 
 type Json = Record<string, unknown>;
 
@@ -140,9 +141,10 @@ export function withQuestionCapability(existing: string | undefined): string {
     .split(",")
     .map((capability) => capability.trim())
     .filter((capability) => capability.length > 0);
-  return advertised.includes("question")
-    ? advertised.join(",")
-    : [...advertised, "question"].join(",");
+  for (const capability of ["question", "extension_events"]) {
+    if (!advertised.includes(capability)) advertised.push(capability);
+  }
+  return advertised.join(",");
 }
 
 interface PendingUi {
@@ -200,6 +202,7 @@ export class OmoSession {
   private readonly taskStates = new Map<string, TaskState>();
   private taskTimer: ReturnType<typeof setTimeout> | null = null;
   private taskScanning = false;
+  private liveTaskOwner = Symbol("omo-task-process");
 
   constructor(options: OmoSessionOptions) {
     this.options = options;
@@ -216,6 +219,9 @@ export class OmoSession {
    */
   private createProcess(sessionFile: string | undefined): OmoProcess {
     const { options } = this;
+    liveTasks.clear(this.liveTaskOwner);
+    const owner = this.liveTaskOwner = Symbol("omo-task-process");
+    let exited = false;
     return new OmoProcess({
       launch: options.launch,
       args: this.spawnArgs(sessionFile),
@@ -228,8 +234,14 @@ export class OmoSession {
           options.config.env?.[RPC_CLIENT_CAPABILITIES_ENV] ?? process.env[RPC_CLIENT_CAPABILITIES_ENV],
         ),
       },
-      onEvent: (event) => this.handleEvent(event),
+      onEvent: (event) => {
+        if (exited || owner !== this.liveTaskOwner) return;
+        this.handleEvent(event);
+      },
       onExit: ({ code, stderr }) => {
+        exited = true;
+        liveTasks.clear(owner);
+        if (owner !== this.liveTaskOwner) return;
         // A suspended session asked for this exit; reporting it would surface
         // the pause as a crash and mark the agent failed in Paseo.
         if (this.closed || this.suspended) return;
@@ -551,6 +563,7 @@ export class OmoSession {
   async suspend(): Promise<void> {
     if (this.closed || this.suspended) return;
     this.suspended = true;
+    liveTasks.clear(this.liveTaskOwner);
 
     if (this.activeTurnId) {
       try {
@@ -688,6 +701,7 @@ export class OmoSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    liveTasks.clear(this.liveTaskOwner);
     if (this.taskTimer !== null) {
       clearTimeout(this.taskTimer);
       this.taskTimer = null;
@@ -698,10 +712,20 @@ export class OmoSession {
     this.proc.stop();
   }
 
+  private handleTaskUpdate(event: OmoEvent): void {
+    if (this.closed || this.suspended || event.name !== "omo.task.updated") return;
+    const parentSessionId = this.state.sessionId;
+    if (!parentSessionId) return;
+    liveTasks.update(this.liveTaskOwner, this.state.cwd ?? this.config.cwd, parentSessionId, event.data);
+  }
+
   // ------------------------------------------------------------------- events
 
   private handleEvent(event: OmoEvent): void {
     switch (event.type) {
+      case "extension_event":
+        this.handleTaskUpdate(event);
+        return;
       case "agent_start":
         if (!this.activeTurnId) {
           this.turnSeq += 1;
