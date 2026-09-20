@@ -139,9 +139,17 @@ describe("todoItems fallback to the arguments", () => {
   });
 
   it("produces no card when neither the result nor the arguments carry a list", () => {
-    expect(todoItems({ op: "view" }, { content: [], details: { op: "view", phases: [] } })).toBeUndefined();
     expect(todoItems({ op: "view" })).toBeUndefined();
     expect(todoItems(undefined, undefined)).toBeUndefined();
+  });
+
+  it("clears the list when the authoritative result contains no phases", () => {
+    const result = { content: [], details: { op: "rm", phases: [] } };
+    expect(todoItems(args, result)).toEqual([]);
+  });
+
+  it("clears the list when its remaining phase has no tasks", () => {
+    expect(todoItems(args, resultWith({ name: "Setup", tasks: [] }))).toEqual([]);
   });
 });
 

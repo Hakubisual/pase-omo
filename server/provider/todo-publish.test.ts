@@ -32,6 +32,13 @@ describe("finalTodoPublication", () => {
     expect(finalTodoPublication(undefined, undefined).publish).toBe(false);
   });
 
+  it("publishes an empty list once when existing tasks were removed", () => {
+    const previous = holdTodo(items("pending")).signature;
+    const cleared = finalTodoPublication(previous, []);
+    expect(cleared).toEqual({ publish: true, signature: "[]", items: [] });
+    expect(finalTodoPublication(cleared.signature, []).publish).toBe(false);
+  });
+
   it("draws nothing when the turn ended on the card already shown", () => {
     const held = holdTodo(items("completed", "completed"));
     const first = finalTodoPublication(undefined, held.items);

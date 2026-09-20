@@ -40,7 +40,7 @@ export function finalTodoPublication(
   previousSignature: string | undefined,
   pending: readonly TodoPublishItem[] | undefined,
 ): { publish: boolean; signature: string | undefined; items?: TodoPublishItem[] } {
-  if (pending === undefined || pending.length === 0) return { publish: false, signature: previousSignature };
+  if (pending === undefined) return { publish: false, signature: previousSignature };
   const signature = signatureOf(pending);
   if (signature === previousSignature) return { publish: false, signature };
   return { publish: true, signature, items: [...pending] };

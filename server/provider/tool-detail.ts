@@ -191,12 +191,15 @@ function resultPhases(result: unknown): unknown[] | undefined {
 export function todoItems(rawArgs: unknown, result?: unknown): TodoItemDetail[] | undefined {
   const phases = resultPhases(result);
   if (phases !== undefined) {
+    if (phases.length === 0) return [];
     const items: TodoItemDetail[] = [];
+    let hasEmptyPhase = false;
     for (const phase of phases) {
       if (typeof phase !== "object" || phase === null) continue;
       const phaseName = str((phase as Json).name, 80);
       const tasks = (phase as Json).tasks;
       if (!Array.isArray(tasks)) continue;
+      if (tasks.length === 0) hasEmptyPhase = true;
       for (const task of tasks) {
         if (typeof task === "string") {
           items.push({ text: phaseName ? `${phaseName}: ${task}` : task, completed: false, status: "pending" });
@@ -220,7 +223,7 @@ export function todoItems(rawArgs: unknown, result?: unknown): TodoItemDetail[] 
         }
       }
     }
-    if (items.length > 0) return items;
+    if (items.length > 0 || hasEmptyPhase) return items;
     // A result whose phases carry nothing usable falls through to the arguments.
   }
 
