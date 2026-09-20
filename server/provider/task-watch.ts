@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ProviderEvent } from "@getpaseo/plugin/server/provider";
+import { taskStateDir } from "../task-state.js";
 
 /**
  * `task()` runs, surfaced as the child sessions Paseo already knows how to draw.
@@ -32,6 +33,7 @@ export interface TaskRecord {
   model?: string;
   started_at?: string;
   terminal_at?: string;
+  notification?: { run_epoch: number };
 }
 
 /** What the watcher already told the host about one task. */
@@ -39,6 +41,8 @@ export interface TaskState {
   status: string;
   opened: boolean;
   closed: boolean;
+  /** Absent for legacy/epoch-zero observations. */
+  runEpoch?: number;
 }
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
@@ -49,6 +53,8 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   "failed",
   "cancelled",
   "canceled",
+  "interrupted",
+  "lost",
 ]);
 
 export function isTerminalTask(record: TaskRecord): boolean {
@@ -58,7 +64,7 @@ export function isTerminalTask(record: TaskRecord): boolean {
 
 function failed(record: TaskRecord): boolean {
   const status = (record.status ?? "").toLowerCase();
-  return status === "error" || status === "failed";
+  return status === "error" || status === "failed" || status === "lost";
 }
 
 /** The line the child's own timeline opens with: what was asked, and of whom. */
@@ -100,11 +106,18 @@ export interface ChildEventResult {
 export function taskChildEvents({ record, parentSessionId, cwd, previous }: ChildEventInput): ChildEventResult {
   const status = (record.status ?? "running").toLowerCase();
   const sessionId = record.task_id;
+  const runEpoch = record.notification?.run_epoch ?? 0;
+  const previousEpoch = previous?.runEpoch ?? 0;
   const events: ProviderEvent[] = [];
+  if (previous !== undefined && runEpoch < previousEpoch) return { events, state: previous };
+  const revived = runEpoch > previousEpoch;
+  // Keep epoch-zero identities stable; each revival owns a distinct turn and items.
+  const suffix = runEpoch === 0 ? "" : `-${runEpoch}`;
   const state: TaskState = {
     status,
-    opened: previous?.opened ?? false,
-    closed: previous?.closed ?? false,
+    opened: revived ? false : (previous?.opened ?? false),
+    closed: revived ? false : (previous?.closed ?? false),
+    ...(runEpoch === 0 ? {} : { runEpoch }),
   };
 
   if (state.closed) return { events, state };
@@ -123,9 +136,9 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
     events.push({
       type: "timeline.item",
       sessionId,
-      item: { type: "assistant_message", id: `${sessionId}-summary`, text: taskSummaryLine(record) },
+      item: { type: "assistant_message", id: `${sessionId}-summary${suffix}`, text: taskSummaryLine(record) },
     });
-    events.push({ type: "session.turn", sessionId, turnId: `${sessionId}-run`, state: "started" });
+    events.push({ type: "session.turn", sessionId, turnId: `${sessionId}-run${suffix}`, state: "started" });
     state.opened = true;
   } else if (previous !== undefined && previous.status === status) {
     // Nothing moved, so nothing is said: every event here is another row.
@@ -139,15 +152,19 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
     sessionId,
     item: {
       type: "assistant_message",
-      id: `${sessionId}-result`,
+      id: `${sessionId}-result${suffix}`,
       text: failed(record) ? `작업 실패 (${status})` : `작업 ${status}`,
     },
   });
   events.push({
     type: "session.turn",
     sessionId,
-    turnId: `${sessionId}-run`,
-    state: failed(record) ? "failed" : "completed",
+    turnId: `${sessionId}-run${suffix}`,
+    state: failed(record)
+      ? "failed"
+      : status === "cancelled" || status === "canceled" || status === "interrupted"
+        ? "canceled"
+        : "completed",
     ...(failed(record) ? { error: { message: `작업 실패 (${status})` } } : {}),
   });
   events.push({ type: "session.closed", sessionId });
@@ -156,7 +173,7 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
 }
 
 export function tasksDirectory(cwd: string): string {
-  return join(cwd, ...TASKS_DIR_SEGMENTS);
+  return join(taskStateDir(cwd), "tasks");
 }
 
 /** Reads the task records this OmO session spawned. Missing directory = none. */

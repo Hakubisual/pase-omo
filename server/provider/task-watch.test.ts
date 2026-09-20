@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   isTerminalTask,
@@ -21,6 +21,7 @@ import {
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -117,6 +118,67 @@ it("says nothing more once the child is closed", () => {
   expect(events).toEqual([]);
 });
 
+it("reopens the same task for a new persisted run epoch and deduplicates each observation", () => {
+  const completed0 = { ...record({ status: "completed", terminal_at: "2026-09-20T08:00:00Z" }), notification: { run_epoch: 0 } };
+  const first = taskChildEvents({ ...context, record: completed0, previous: undefined });
+  expect(first.events.filter(event => event.type === "session.turn")).toEqual([
+    expect.objectContaining({ turnId: "st_abc123-run", state: "started" }),
+    expect.objectContaining({ turnId: "st_abc123-run", state: "completed" }),
+  ]);
+  expect(taskChildEvents({ ...context, record: completed0, previous: first.state }).events).toEqual([]);
+
+  const running1 = { ...record(), notification: { run_epoch: 1 } };
+  const revived = taskChildEvents({ ...context, record: running1, previous: first.state });
+  expect(revived.events.map(event => event.type)).toEqual(["session.opened", "timeline.item", "session.turn"]);
+  expect(revived.events[0]).toMatchObject({ sessionId: "st_abc123", parentSessionId: context.parentSessionId });
+  expect(revived.events[2]).toMatchObject({ turnId: "st_abc123-run-1", state: "started" });
+  expect(revived.state).toMatchObject({ runEpoch: 1, status: "running", closed: false });
+  expect(taskChildEvents({ ...context, record: running1, previous: revived.state })).toEqual({ events: [], state: revived.state });
+  expect(taskChildEvents({ ...context, record: completed0, previous: revived.state })).toEqual({ events: [], state: revived.state });
+
+  const completed1 = { ...running1, status: "completed", terminal_at: "2026-09-20T09:00:00Z" };
+  const finished = taskChildEvents({ ...context, record: completed1, previous: revived.state });
+  expect(finished.events.map(event => event.type)).toEqual(["timeline.item", "session.turn", "session.closed"]);
+  expect(finished.events[1]).toMatchObject({ turnId: "st_abc123-run-1", state: "completed" });
+  expect(finished.state).toMatchObject({ runEpoch: 1, closed: true });
+  expect(taskChildEvents({ ...context, record: completed1, previous: finished.state }).events).toEqual([]);
+  const itemIds = [...first.events, ...revived.events, ...finished.events]
+    .filter(event => event.type === "timeline.item").map(event => event.item.id);
+  expect(new Set(itemIds).size).toBe(itemIds.length);
+});
+
+it("observes a new epoch even when both observations are already completed", () => {
+  const initial = taskChildEvents({ ...context, record: record({ status: "completed" }), previous: undefined });
+  const next = taskChildEvents({
+    ...context,
+    record: { ...record({ status: "completed" }), notification: { run_epoch: 1 } },
+    previous: initial.state,
+  });
+  expect(next.events.filter(event => event.type === "session.turn")).toEqual([
+    expect.objectContaining({ turnId: "st_abc123-run-1", state: "started" }),
+    expect.objectContaining({ turnId: "st_abc123-run-1", state: "completed" }),
+  ]);
+});
+
+it.each([
+  ["cancelled", "canceled"],
+  ["interrupted", "canceled"],
+  ["lost", "failed"],
+  ["error", "failed"],
+] as const)("maps native %s to a %s child turn", (status, expected) => {
+  expect(isTerminalTask(record({ status }))).toBe(true);
+  const started = taskChildEvents({ ...context, record: record(), previous: undefined });
+  const result = taskChildEvents({
+    ...context,
+    record: record({ status, terminal_at: "2026-09-20T08:00:00Z" }),
+    previous: started.state,
+  });
+  expect(result.events.map(event => event.type)).toEqual(["timeline.item", "session.turn", "session.closed"]);
+  expect(result.events[1]).toMatchObject({ type: "session.turn", state: expected });
+  if (expected === "failed") expect(result.events[1]).toHaveProperty("error.message");
+  else expect(result.events[1]).not.toHaveProperty("error");
+});
+
 it("treats a record with no terminal marker and a running status as live", () => {
   expect(isTerminalTask(record())).toBe(false);
   expect(isTerminalTask(record({ status: "cancelled" }))).toBe(true);
@@ -152,4 +214,15 @@ it("treats a project with no task directory as having no children", async () => 
   roots.push(root);
 
   expect(await readTaskRecords(root, "omo-session-1")).toEqual([]);
+});
+
+it("reads the same overridden task store as the DAG snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "omo-task-override-"));
+  roots.push(root);
+  const stateRoot = join(root, "state");
+  vi.stubEnv("PASEO_OMO_TASK_STATE_DIR", stateRoot);
+  await mkdir(join(stateRoot, "tasks"), { recursive: true });
+  await writeFile(join(stateRoot, "tasks", "st_override.json"), JSON.stringify(record({ task_id: "st_override" })));
+  expect((await readTaskRecords(join(root, "project"), "omo-session-1")).map((task) => task.task_id))
+    .toEqual(["st_override"]);
 });
