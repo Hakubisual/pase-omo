@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createPublisher } from "./publisher.js";
+import { sdkContext } from "./sdk-context.test-support.js";
 
 /**
  * One card per run, and it is the run being worked on.
@@ -67,16 +68,8 @@ async function fixture() {
       }),
     );
 
-  const saveAgentRecord = (): Promise<void> =>
-    write(
-      join(paseoHome, "agents", "group", "agent-1.json"),
-      JSON.stringify({
-        cwd,
-        runtimeInfo: {
-          sessionId: `omo ${JSON.stringify({ data: { sessionFile: `/sessions/2026-09-15T00-00-00_${SESSION}.jsonl` } })}`,
-        },
-      }),
-    );
+  const sdk = sdkContext(cwd, null);
+  const saveAgentRecord = async (): Promise<void> => { sdk.setSessionId(SESSION); };
 
   const agent: PluginHookAgent = {
     id: "agent-1",
@@ -86,26 +79,23 @@ async function fixture() {
     cwd,
     title: null,
   };
-  return { agent, saveRun, saveAgentRecord };
+  return { agent, saveRun, saveAgentRecord, context: stubContext(sdk) };
 }
 
-function stubContext(): PluginHookContext {
+function stubContext(sdk: ReturnType<typeof sdkContext>): PluginHookContext {
   const timeline = {
     append: async (item: { id: string }) => {
       appends.push(item as (typeof appends)[number]);
       return { seq: appends.length, epoch: "epoch-1" };
     },
   };
-  return {
-    paseo: { agents: { ref: () => ({ timeline }) } },
-    signal: new AbortController().signal,
-  } as unknown as PluginHookContext;
+  sdk.append.mockImplementation(async (item) => timeline.append(item as { id: string }));
+  return sdk.context;
 }
 
 test("a run that works its way through its nodes leaves exactly one card", async () => {
-  const { agent, saveRun, saveAgentRecord } = await fixture();
+  const { agent, saveRun, saveAgentRecord, context } = await fixture();
   await saveAgentRecord();
-  const context = stubContext();
   const publisher = createPublisher();
 
   await saveRun("dag_1", "running", 0);
@@ -113,13 +103,10 @@ test("a run that works its way through its nodes leaves exactly one card", async
 
   // The run moves: each of these used to be another card in the conversation.
   await saveRun("dag_1", "running", 1);
-  await vi.advanceTimersByTimeAsync(2000);
   await publisher.settle();
   await saveRun("dag_1", "running", 2);
-  await vi.advanceTimersByTimeAsync(2000);
   await publisher.settle();
   await saveRun("dag_1", "completed", 3);
-  await vi.advanceTimersByTimeAsync(2000);
   await publisher.settle();
 
   expect(appends.map((item) => item.id)).toEqual(["dag-dag_1"]);
@@ -130,14 +117,12 @@ test("a run that works its way through its nodes leaves exactly one card", async
 });
 
 test("nothing is drawn while the run is still working, because the pill is the live surface", async () => {
-  const { agent, saveRun, saveAgentRecord } = await fixture();
+  const { agent, saveRun, saveAgentRecord, context } = await fixture();
   await saveAgentRecord();
-  const context = stubContext();
   const publisher = createPublisher();
 
   await saveRun("dag_1", "running", 1);
   await publisher.onTurnStarted(agent, context);
-  await vi.advanceTimersByTimeAsync(5000);
   await publisher.settle();
 
   expect(appends).toEqual([]);
@@ -145,9 +130,8 @@ test("nothing is drawn while the run is still working, because the pill is the l
 });
 
 test("a run still working when the watch retires is drawn once, so the chat is not left empty", async () => {
-  const { agent, saveRun, saveAgentRecord } = await fixture();
+  const { agent, saveRun, saveAgentRecord, context } = await fixture();
   await saveAgentRecord();
-  const context = stubContext();
   const publisher = createPublisher();
 
   await saveRun("dag_1", "running", 1);
@@ -165,9 +149,8 @@ test("a run still working when the watch retires is drawn once, so the chat is n
 });
 
 test("a second run gets its own single card, and the finished one is not redrawn", async () => {
-  const { agent, saveRun, saveAgentRecord } = await fixture();
+  const { agent, saveRun, saveAgentRecord, context } = await fixture();
   await saveAgentRecord();
-  const context = stubContext();
   const publisher = createPublisher();
 
   await saveRun("dag_1", "completed", 3);
@@ -175,7 +158,6 @@ test("a second run gets its own single card, and the finished one is not redrawn
   expect(appends.map((item) => item.id)).toEqual(["dag-dag_1"]);
 
   await saveRun("dag_2", "completed", 3);
-  await vi.advanceTimersByTimeAsync(2000);
   await publisher.settle();
 
   expect(appends.map((item) => item.id)).toEqual(["dag-dag_1", "dag-dag_2"]);

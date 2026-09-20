@@ -1,4 +1,5 @@
 import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   getSnapshotRpc,
   listSessionsRpc,
@@ -20,17 +21,25 @@ export async function getSnapshot(input: RpcInput<typeof getSnapshotRpc>): Promi
 /**
  * Where an "Open in OmO DAG" action should land.
  *
- * A chat knows its Paseo agent, not an OmO session, so the daemon reads the
- * agent record for the workspace and session behind it and then resolves
+ * A chat knows its Paseo agent, not an OmO session, so the daemon fetches the
+ * SDK snapshot for the workspace and session behind it and then resolves
  * ownership from there.
  */
-export async function locateDag(input: RpcInput<typeof locateDagRpc>): Promise<LocateDagPayload> {
+export async function locateDag(
+  input: RpcInput<typeof locateDagRpc>,
+  context: PluginHandlerContext,
+): Promise<LocateDagPayload> {
   let cwd = input.cwd;
   let sessionId = input.sessionId;
-  if (input.agentId !== undefined && (cwd === undefined || sessionId === undefined)) {
-    const origin = await resolveAgent(input.agentId);
+  let sessionFile: string | undefined;
+  if (input.agentId !== undefined) {
+    const origin = await resolveAgent(input.agentId, context);
     cwd = cwd ?? origin.cwd ?? undefined;
     sessionId = sessionId ?? origin.sessionId ?? undefined;
+    sessionFile = origin.sessionFile;
+    if (sessionId === undefined) {
+      return { destination: null, reason: "이 대화의 OmO 세션을 아직 확인할 수 없습니다." };
+    }
   }
   if (cwd === undefined) {
     return { destination: null, reason: "이 대화에 기록된 OmO 워크스페이스가 아직 없습니다." };
@@ -38,6 +47,7 @@ export async function locateDag(input: RpcInput<typeof locateDagRpc>): Promise<L
   return locateDagDestination({
     cwd,
     ...(sessionId === undefined ? {} : { sessionId }),
+    ...(sessionFile === undefined ? {} : { sessionFile }),
     ...(input.runId === undefined ? {} : { runId: input.runId }),
     ...(input.taskId === undefined ? {} : { taskId: input.taskId }),
   });

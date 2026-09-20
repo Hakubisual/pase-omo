@@ -5,6 +5,9 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { locateDag } from "./dag.js";
 import { locateDagRpc } from "../../shared/navigate.js";
+import { sdkContext } from "../chat/sdk-context.test-support.js";
+
+const unusedContext = sdkContext("unused").context;
 
 /**
  * "Open in OmO DAG" has to land on the session that owns the work. Ownership is
@@ -39,6 +42,7 @@ async function fixture() {
     const file = join(agentDir, "sessions", "bucket", `${id}.jsonl`);
     await save(file, { type: "session", id, cwd: directory, timestamp, ...extra });
     await writeFile(file, `${await readFile(file, "utf8")}\n`);
+    return file;
   }
   const task = (id: string, parent: string, extra: Record<string, unknown> = {}) =>
     save(join(taskDir, "tasks", `${id}.json`), {
@@ -79,15 +83,15 @@ test("a child session resolves to the top-level session that owns it", async () 
   await run("dag_parent", "parent");
 
   // Navigating from the child session, which the dashboard never lists.
-  await expect(locateDag({ cwd, sessionId: "child" })).resolves.toEqual({
+  await expect(locateDag({ cwd, sessionId: "child" }, unusedContext)).resolves.toEqual({
     destination: { cwd, sessionId: "parent" },
     });
 
   // Navigating from a run and from a task, without naming a session at all.
-  await expect(locateDag({ cwd, runId: "dag_parent" })).resolves.toEqual({
+  await expect(locateDag({ cwd, runId: "dag_parent" }, unusedContext)).resolves.toEqual({
     destination: { cwd, sessionId: "parent", runId: "dag_parent" },
   });
-  await expect(locateDag({ cwd, taskId: "st_child" })).resolves.toEqual({
+  await expect(locateDag({ cwd, taskId: "st_child" }, unusedContext)).resolves.toEqual({
     destination: { cwd, sessionId: "parent", taskId: "st_child" },
   });
 });
@@ -98,22 +102,51 @@ test("a destination that no longer exists is reported instead of opening another
   await task("st_root", "parent");
   await run("dag_parent", "parent");
 
-  const unknownSession = await locateDag({ cwd, sessionId: "vanished" });
+  const unknownSession = await locateDag({ cwd, sessionId: "vanished" }, unusedContext);
   expect(unknownSession.destination).toBeNull();
   expect(unknownSession.reason).toContain("vanished");
 
-  const unknownRun = await locateDag({ cwd, sessionId: "parent", runId: "dag_gone" });
+  const unknownRun = await locateDag({ cwd, sessionId: "parent", runId: "dag_gone" }, unusedContext);
   expect(unknownRun.destination).toEqual({ cwd, sessionId: "parent" });
   expect(unknownRun.reason).toContain("dag_gone");
 
-  const nothingKnown = await locateDag({ cwd, runId: "dag_gone" });
+  const nothingKnown = await locateDag({ cwd, runId: "dag_gone" }, unusedContext);
   expect(nothingKnown.destination).toBeNull();
   expect(nothingKnown.reason).toBeTruthy();
 });
 
+test("agent navigation fetches its SDK identity without agent files", async () => {
+  const { cwd, header, run } = await fixture();
+  const sessionFile = await header("parent");
+  await run("dag_parent", "parent");
+  const sdk = sdkContext(cwd, "parent");
+  sdk.snapshot.runtimeInfo = { provider: "omo", sessionId: `omo ${JSON.stringify({ data: { sessionFile } })}` };
+  await expect(locateDag({ agentId: "agent-1" }, sdk.context)).resolves.toMatchObject({
+    destination: { cwd, sessionId: "parent" },
+  });
+  expect(sdk.ref).toHaveBeenCalledWith("agent-1");
+  expect(sdk.refresh).toHaveBeenCalledTimes(1);
+});
+
+test("missing SDK identity does not select another chat in the same workspace", async () => {
+  const { cwd, header, run } = await fixture();
+  await header("other");
+  await run("dag_other", "other");
+  const sdk = sdkContext(cwd, null);
+  const result = await locateDag({ agentId: "agent-1" }, sdk.context);
+  expect(result.destination).toBeNull();
+});
+
+test("navigation propagates SDK failures", async () => {
+  const sdk = sdkContext("E:/project");
+  const error = new Error("SDK unavailable");
+  sdk.refresh.mockRejectedValue(error);
+  await expect(locateDag({ agentId: "agent-1" }, sdk.context)).rejects.toBe(error);
+});
+
 test("an agent with no recorded workspace reports that rather than picking one", async () => {
   await fixture();
-  const located = await locateDag({ sessionId: "parent" });
+  const located = await locateDag({ sessionId: "parent" }, unusedContext);
   expect(located.destination).toBeNull();
   expect(located.reason).toContain("워크스페이스");
 });

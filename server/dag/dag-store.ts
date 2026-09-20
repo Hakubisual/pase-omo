@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { DagRun, DagSession, DagStatus, DagTask } from "../../shared/dag.js";
 import type { LocateDagPayload } from "../../shared/navigate.js";
-import { readSessionHeaders, sameCwd, type SessionHeader, sessionsDir } from "../provider/omo-store.js";
+import { readSessionHeader, readSessionHeaders, sameCwd, type SessionHeader, sessionsDir } from "../provider/omo-store.js";
 import { taskStateDir as resolveTaskStateDir } from "../task-state.js";
 
 /**
@@ -176,6 +176,8 @@ export interface DagStoreOptions {
   cwd: string;
   taskStateDir?: string;
   sessionsDir?: string;
+  /** SDK persistence path for the selected session; its header must match id and cwd. */
+  sessionFile?: string;
 }
 
 function resolveOptions(options: DagStoreOptions) {
@@ -185,6 +187,7 @@ function resolveOptions(options: DagStoreOptions) {
     cwd,
     taskStateDir: options.taskStateDir ? resolve(options.taskStateDir) : resolveTaskStateDir(cwd),
     sessionsDir: resolve(options.sessionsDir ?? sessionsDir()),
+    sessionFile: options.sessionFile,
   };
 }
 
@@ -239,7 +242,14 @@ interface Catalog {
   runs: TaskRecord[];
 }
 
-async function readCatalog(options: ReturnType<typeof resolveOptions>): Promise<Catalog> {
+async function readCatalog(options: ReturnType<typeof resolveOptions>, sessionId?: string): Promise<Catalog> {
+  // An SDK path is authoritative, not a hint: neither a global-home header nor
+  // task/run fallback metadata may authorize a missing or mismatched file.
+  const selectedHeader = options.sessionFile === undefined ? undefined : await readSessionHeader(options.sessionFile);
+  if (options.sessionFile !== undefined &&
+      (!selectedHeader || selectedHeader.id !== sessionId || !sameCwd(selectedHeader.cwd, options.cwd))) {
+    throw sessionNotFound();
+  }
   const [headers, tasks, runs] = await Promise.all([
     readSessionHeaders(options.sessionsDir),
     readRecords(join(options.taskStateDir, "tasks")),
@@ -262,7 +272,10 @@ async function readCatalog(options: ReturnType<typeof resolveOptions>): Promise<
 
   const sessions: Catalog["sessions"] = new Map();
   const children = new Set<string>();
-  for (const header of headers as SessionHeader[]) {
+  const verifiedHeaders: SessionHeader[] = selectedHeader
+    ? [...headers.filter(header => header.id !== selectedHeader.id), selectedHeader]
+    : headers;
+  for (const header of verifiedHeaders) {
     const existing = sessions.get(header.id);
     if (!existing || existing.updatedAt < header.updatedAt) {
       sessions.set(header.id, {
@@ -416,7 +429,7 @@ export async function getDagSnapshot(
   options: DagStoreOptions & { sessionId: string },
 ): Promise<{ sessionId: string; tasks: DagTask[]; runs: DagRun[] }> {
   const resolved = resolveOptions(options);
-  const catalog = await readCatalog(resolved);
+  const catalog = await readCatalog(resolved, options.sessionId);
   const selected = catalog.sessions.get(options.sessionId);
   if (!selected || !sameCwd(selected.cwd, resolved.cwd)) {
     throw sessionNotFound();
@@ -436,7 +449,7 @@ export async function locateDagDestination(
   options: DagStoreOptions & { sessionId?: string; runId?: string; taskId?: string },
 ): Promise<LocateDagPayload> {
   const resolved = resolveOptions(options);
-  const catalog = await readCatalog(resolved);
+  const catalog = await readCatalog(resolved, options.sessionId);
 
   const runOwner = new Map<string, string>();
   for (const { raw } of catalog.runs) {

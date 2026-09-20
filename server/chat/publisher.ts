@@ -1,5 +1,5 @@
 import type { RpcInput } from "@getpaseo/plugin";
-import type { PluginHookAgent, PluginHookContext } from "@getpaseo/plugin/server";
+import type { PluginHandlerContext, PluginHookAgent, PluginHookContext } from "@getpaseo/plugin/server";
 import {
   agentDagSnapshotRpc,
   DAG_ROW_KIND,
@@ -64,10 +64,15 @@ export type Publisher = {
 /** Resolves the current agent's full DAG snapshot entirely on the daemon. */
 export async function agentDagSnapshot(
   { agentId }: RpcInput<typeof agentDagSnapshotRpc>,
+  context: PluginHandlerContext,
 ): Promise<AgentDagSnapshotPayload> {
-  const origin = await resolveAgent(agentId);
+  const origin = await resolveAgent(agentId, context);
   if (!origin.cwd || !origin.sessionId) return { sessionId: null, runs: [], tasks: [] };
-  return getDagSnapshot({ cwd: origin.cwd, sessionId: origin.sessionId });
+  return getDagSnapshot({
+    cwd: origin.cwd,
+    sessionId: origin.sessionId,
+    ...(origin.sessionFile === undefined ? {} : { sessionFile: origin.sessionFile }),
+  });
 }
 
 export function createPublisher(): Publisher {
@@ -115,12 +120,12 @@ export function createPublisher(): Publisher {
     watch.ticking = true;
     try {
       if (watch.sessionId === null) {
-        // The daemon writes an agent's runtime session record after the agent
-        // exists, so the first lookup of a fresh chat can legitimately miss.
+        // The daemon may not yet expose a fresh agent's runtime identity,
+        // so the first snapshot lookup can legitimately miss.
         // Latching that miss would disable publishing for that agent's whole
         // lifetime, so the lookup is retried until it answers; only the log
         // line is suppressed after the first miss.
-        watch.sessionId = await resolveSessionId(agent.id);
+        watch.sessionId = await resolveSessionId(agent.id, context);
         if (watch.sessionId !== null || !watch.announced) {
           watch.announced = true;
           console.log(`[omo-dag-chat] agent ${agent.id} cwd=${agent.cwd} session=${watch.sessionId ?? "unresolved"}`);

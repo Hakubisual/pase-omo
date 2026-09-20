@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { basename, join } from "node:path";
 import { DagRowSchema, type DagChip, type DagEdge, type DagRow } from "../../shared/row";
 import { invalidRecord } from "../dag/dag-store.js";
@@ -36,7 +36,7 @@ async function readJson(file: string): Promise<unknown> {
   }
 }
 
-function sessionIdFromRuntime(runtimeSessionId: string): string | null {
+function sessionFileFromRuntime(runtimeSessionId: string): string | null {
   const brace = runtimeSessionId.indexOf("{");
   if (brace < 0) return null;
   let parsed: unknown;
@@ -46,7 +46,10 @@ function sessionIdFromRuntime(runtimeSessionId: string): string | null {
     return null;
   }
   const file = (parsed as { data?: { sessionFile?: unknown } } | null)?.data?.sessionFile;
-  if (typeof file !== "string") return null;
+  return text(file);
+}
+
+function sessionIdFromFile(file: string): string {
   const name = basename(file).replace(/\.jsonl$/i, "");
   const underscore = name.indexOf("_");
   return underscore >= 0 ? name.slice(underscore + 1) : name;
@@ -55,38 +58,25 @@ function sessionIdFromRuntime(runtimeSessionId: string): string | null {
 export type AgentOrigin = {
   cwd: string | null;
   sessionId: string | null;
+  /** Authoritative persistence path, verified against its header by the DAG store. */
+  sessionFile?: string;
 };
 
-/** Reads the daemon's agent record: its working directory and its OmO session. */
-export async function resolveAgent(agentId: string): Promise<AgentOrigin> {
-  const agentsDir = join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "agents");
-  let groups: string[];
-  try {
-    groups = await readdir(agentsDir);
-  } catch (error) {
-    // A daemon that has never written an agent record has no directory; that is
-    // "no agents", not a failure. Anything else is a real read error.
-    if ((error as { code?: string }).code === "ENOENT") return { cwd: null, sessionId: null };
-    throw invalidRecord("agents directory", { path: agentsDir, cause: error });
-  }
-  for (const group of groups) {
-    const record = (await readJson(join(agentsDir, group, `${agentId}.json`))) as {
-      cwd?: unknown;
-      runtimeInfo?: { sessionId?: unknown };
-    } | null;
-    if (!record) continue;
-    const runtime = record.runtimeInfo?.sessionId;
-    return {
-      cwd: text(record.cwd),
-      sessionId: typeof runtime === "string" ? sessionIdFromRuntime(runtime) : null,
-    };
-  }
-  return { cwd: null, sessionId: null };
+/** Fetches a daemon snapshot through the SDK; handle.refresh does not reopen the provider. */
+export async function resolveAgent(agentId: string, context: PluginHandlerContext): Promise<AgentOrigin> {
+  const agent = (await context.paseo.agents.ref(agentId).refresh())?.agent;
+  const runtime = agent?.runtimeInfo?.sessionId;
+  const sessionFile = typeof runtime === "string" ? sessionFileFromRuntime(runtime) : null;
+  return {
+    cwd: text(agent?.cwd),
+    sessionId: sessionFile === null ? null : sessionIdFromFile(sessionFile),
+    ...(sessionFile === null ? {} : { sessionFile }),
+  };
 }
 
 /** Maps a Paseo agent to the OmO session whose DAG runs belong to that chat. */
-export async function resolveSessionId(agentId: string): Promise<string | null> {
-  return (await resolveAgent(agentId)).sessionId;
+export async function resolveSessionId(agentId: string, context: PluginHandlerContext): Promise<string | null> {
+  return (await resolveAgent(agentId, context)).sessionId;
 }
 
 type RawNode = {

@@ -1,4 +1,5 @@
 import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { DagRow, activeRunsRpc } from "../../shared/row";
 import { readRows, resolveAgent } from "./runs";
 
@@ -28,8 +29,11 @@ function announceOnce(agentId: string, line: string): void {
   console.log(line);
 }
 
-export async function activeRuns({ agentId }: RpcInput<typeof activeRunsRpc>): Promise<{ rows: DagRow[] }> {
-  const origin = await resolveAgent(agentId);
+export async function activeRuns(
+  { agentId }: RpcInput<typeof activeRunsRpc>,
+  context: PluginHandlerContext,
+): Promise<{ rows: DagRow[] }> {
+  const origin = await resolveAgent(agentId, context);
   // No resolved OmO session means no runs can be attributed to this chat; other
   // chats in the same directory must not borrow each other's graphs.
   if (!origin.cwd || !origin.sessionId) return { rows: [] };

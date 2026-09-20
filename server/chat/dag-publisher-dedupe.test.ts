@@ -1,13 +1,14 @@
 import type { PluginHookAgent, PluginHookContext } from "@getpaseo/plugin/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DagRow } from "../../shared/row.js";
+import { sdkContext } from "./sdk-context.test-support.js";
 
 const runStore = vi.hoisted(() => ({
   row: null as DagRow | null,
 }));
 
-vi.mock("./runs.js", () => ({
-  resolveSessionId: async () => "session-current",
+vi.mock("./runs.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./runs.js")>(),
   readRows: async () => (runStore.row ? [runStore.row] : []),
 }));
 
@@ -40,21 +41,12 @@ const row = (updatedAt: string): DagRow => ({
 let appends: string[];
 
 function context(): PluginHookContext {
-  return {
-    paseo: {
-      agents: {
-        ref: () => ({
-          timeline: {
-            append: async (item: { id: string }) => {
-              appends.push(item.id);
-              return { seq: appends.length, epoch: "epoch-1" };
-            },
-          },
-        }),
-      },
-    },
-    signal: new AbortController().signal,
-  } as unknown as PluginHookContext;
+  const sdk = sdkContext(agent.cwd, "session-current");
+  sdk.append.mockImplementation(async (item) => {
+    appends.push(item.id ?? "");
+    return { seq: appends.length, epoch: "epoch-1" };
+  });
+  return sdk.context;
 }
 
 beforeEach(() => {

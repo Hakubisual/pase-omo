@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { readRows, resolveAgent } from "./runs.js";
+import { readRows, resolveAgent, resolveSessionId } from "./runs.js";
+import { activeRuns } from "./active.js";
+import { sdkContext } from "./sdk-context.test-support.js";
 
 /**
  * The chat reader turns the OmO run store into timeline cards. Every failure it
@@ -125,15 +127,43 @@ test("a link to a node that truncation dropped never reaches the card", async ()
   expect(row?.edges.some((edge) => edge.to === "n61")).toBe(false);
 });
 
-test("an agent record that cannot be parsed is a visible error, not an unknown agent", async () => {
-  const { write, agentRecord } = await fixture();
-  await write(agentRecord, "{ broken");
-
-  await expect(resolveAgent("agent-1")).rejects.toMatchObject({ code: "PASEO_INVALID_RECORD", path: agentRecord });
+test("SDK snapshots resolve identity without agent files", async () => {
+  const { cwd } = await fixture();
+  const sdk = sdkContext(cwd, SESSION);
+  await expect(resolveAgent("agent-1", sdk.context)).resolves.toEqual({
+    cwd, sessionId: SESSION, sessionFile: `/sessions/2026-09-15T00-00-00_${SESSION}.jsonl`,
+  });
+  await expect(resolveSessionId("agent-1", sdk.context)).resolves.toBe(SESSION);
+  expect(sdk.ref).toHaveBeenCalledWith("agent-1");
+  expect(sdk.refresh).toHaveBeenCalledTimes(2);
 });
 
-test("a daemon that has written no agent records resolves to nothing", async () => {
-  await fixture();
+test("missing SDK identity never falls back to an agent file", async () => {
+  const { cwd, write, agentRecord } = await fixture();
+  const sdk = sdkContext(cwd, null);
+  await write(agentRecord, JSON.stringify({ cwd, runtimeInfo: { sessionId: 'omo {"data":{"sessionFile":"/sessions/old_other.jsonl"}}' } }));
+  await expect(resolveAgent("agent-1", sdk.context)).resolves.toEqual({ cwd, sessionId: null });
+  sdk.refresh.mockResolvedValueOnce(null);
+  await expect(resolveAgent("agent-1", sdk.context)).resolves.toEqual({ cwd: null, sessionId: null });
+});
 
-  await expect(resolveAgent("agent-1")).resolves.toEqual({ cwd: null, sessionId: null });
+test("SDK fetch errors propagate without a disk fallback", async () => {
+  const { cwd } = await fixture();
+  const sdk = sdkContext(cwd);
+  const error = new Error("snapshot unavailable");
+  sdk.refresh.mockRejectedValue(error);
+  await expect(resolveAgent("agent-1", sdk.context)).rejects.toBe(error);
+  await expect(activeRuns({ agentId: "agent-1" }, sdk.context)).rejects.toBe(error);
+});
+
+test("active runs use the caller SDK snapshot and isolate its session", async () => {
+  const { cwd, saveRun } = await fixture();
+  const sdk = sdkContext(cwd, SESSION);
+  const updatedAt = new Date().toISOString();
+  await saveRun("mine", { runId: "dag_mine", updatedAt });
+  await saveRun("other", { runId: "dag_other", parentSessionId: "other", updatedAt });
+  const result = await activeRuns({ agentId: "agent-1" }, sdk.context);
+  expect(result.rows.map((row) => row.runId)).toEqual(["dag_mine"]);
+  sdk.setSessionId(null);
+  await expect(activeRuns({ agentId: "agent-1" }, sdk.context)).resolves.toEqual({ rows: [] });
 });
