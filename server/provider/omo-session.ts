@@ -470,12 +470,33 @@ export class OmoSession {
       return;
     }
     if (!Array.isArray(messages)) return;
+    const results = new Map<string, Json>();
+    const todoCalls = new Set<string>();
+    for (const raw of messages) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const message = raw as Json;
+      if (message.role === "toolResult" && typeof message.toolCallId === "string") {
+        results.set(message.toolCallId, message);
+      }
+      if (message.role === "assistant" && message.display !== false) {
+        for (const call of messageToolCalls(message.content)) {
+          if (call.name === "todo") todoCalls.add(call.id);
+        }
+      }
+    }
+    let latestTodo: TodoPublishItem[] | undefined;
     let index = 0;
     for (const raw of messages) {
       index += 1;
       if (typeof raw !== "object" || raw === null) continue;
       const message = raw as Json;
       const role = message.role;
+      if (role === "toolResult" && typeof message.toolCallId === "string" && todoCalls.has(message.toolCallId)) {
+        // Result order is authoritative. Never let stale call arguments or a
+        // failed/malformed operation replace the last valid post-operation list.
+        const items = message.isError === true ? undefined : todoItems(undefined, message);
+        if (items !== undefined) latestTodo = items;
+      }
       if (message.display === false) continue;
       const text = messageText(message.content);
       if (role === "user" && text) {
@@ -485,15 +506,31 @@ export class OmoSession {
       if (role !== "assistant") continue;
       if (text) this.publishVisibleText("assistant", `replay-assistant-${index}`, text);
       for (const call of messageToolCalls(message.content)) {
+        const result = results.get(call.id);
+        const output = toolResultText(result);
+        const failed = result?.isError === true;
         this.item({
           type: "tool_call",
           id: `replay-tool-${call.id}`,
           callId: call.id,
           name: call.name,
-          detail: toolCallDetail(call.name, call.arguments),
-          status: "completed",
-          error: null,
+          detail: toolCallDetail(call.name, call.arguments, output, result),
+          ...(failed
+            ? { status: "failed" as const, error: output ?? "Tool call failed" }
+            : { status: result === undefined ? "running" as const : "completed" as const, error: null }),
         });
+      }
+    }
+    // Replay reconstructs a fresh timeline even if the previous process already
+    // remembered this card. Seed live deduplication from the one final replay.
+    const finalTodo = finalTodoPublication(undefined, latestTodo);
+    if (finalTodo.publish && finalTodo.items !== undefined && finalTodo.signature !== undefined) {
+      this.lastTodoSignature = finalTodo.signature;
+      this.item({ type: "todo", id: this.todoItemId, items: finalTodo.items });
+      try {
+        await rememberPublishedTodo(this.todoMemoryKey, finalTodo.signature);
+      } catch (error) {
+        this.options.log(`todo card memory write failed: ${describe(error)}`);
       }
     }
   }
