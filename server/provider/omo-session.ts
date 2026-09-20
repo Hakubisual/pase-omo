@@ -187,6 +187,7 @@ export class OmoSession {
   private config: ProviderSessionConfig;
   private models: ProviderModel[] = [];
   private state: OmoStateRecord = {};
+  private sessionReplaced = false;
   private commands: OmoCommandRecord[] = [];
 
   private turnSeq = 0;
@@ -263,7 +264,7 @@ export class OmoSession {
   }
 
   get durableSessionFile(): string | undefined {
-    return this.state.sessionFile ?? this.options.sessionFile;
+    return this.state.sessionFile ?? (this.sessionReplaced ? undefined : this.options.sessionFile);
   }
 
   /**
@@ -747,6 +748,36 @@ export class OmoSession {
       case "extension_event":
         this.handleTaskUpdate(event);
         return;
+      case "session_replaced": {
+        if (typeof event.durableSessionId !== "string" || typeof event.cwd !== "string") return;
+        this.flushAll();
+        liveTasks.clear(this.liveTaskOwner);
+        this.taskStates.clear();
+        this.toolCalls.clear();
+        this.textBuffers.clear();
+        this.pendingTodoItems = undefined;
+        this.lastTodoSignature = undefined;
+        for (const permissionId of this.pendingUi.keys()) {
+          this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId });
+        }
+        this.pendingUi.clear();
+        if (this.activeTurnId !== null) {
+          this.emit({ type: "session.turn", sessionId: this.sessionId, turnId: this.activeTurnId, state: "canceled" });
+          this.activeTurnId = null;
+        }
+        const { sessionFile: _oldFile, sessionName: _oldName, ...state } = this.state;
+        this.state = {
+          ...state,
+          sessionId: event.durableSessionId,
+          cwd: event.cwd,
+          ...(typeof event.sessionFile === "string" ? { sessionFile: event.sessionFile } : {}),
+          ...(typeof event.sessionName === "string" ? { sessionName: event.sessionName } : {}),
+        };
+        this.sessionReplaced = true;
+        const persistence = this.persistence();
+        if (persistence) this.emit({ type: "session.persistence", sessionId: this.sessionId, persistence });
+        return;
+      }
       case "agent_start":
         if (!this.activeTurnId) {
           this.turnSeq += 1;
@@ -791,8 +822,24 @@ export class OmoSession {
       case "extension_ui_request":
         this.handleUiRequest(event);
         return;
+      case "question_resolved":
+        if (typeof event.id === "string" && this.pendingUi.delete(event.id)) {
+          this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId: event.id });
+        }
+        return;
+      case "commands_changed":
+        if (Array.isArray(event.commands)) {
+          this.commands = event.commands.flatMap((command: unknown) => {
+            if (typeof command !== "object" || command === null || !("name" in command) || typeof command.name !== "string") return [];
+            if ("syntax" in command && command.syntax === "dollar") return [];
+            return [{ name: command.name, ...("description" in command && typeof command.description === "string" ? { description: command.description } : {}) }];
+          });
+          this.publishCommands();
+        }
+        return;
       case "model_changed":
       case "thinking_level_changed":
+      case "service_tier_changed":
         this.handleConfigChanged(event);
         return;
       case "continuation_error":
@@ -829,7 +876,7 @@ export class OmoSession {
       this.activeTurnId = turnId;
       return;
     }
-    this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: "completed" });
+    this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: event?.aborted === true ? "canceled" : "completed" });
     const usage = usageOf(event);
     if (usage) this.emit({ type: "session.usage", sessionId: this.sessionId, turnId, usage });
     const persistence = this.persistence();
@@ -852,6 +899,7 @@ export class OmoSession {
     }
     if (typeof event.level === "string") this.state = { ...this.state, thinkingLevel: event.level };
     if (typeof event.thinkingLevel === "string") this.state = { ...this.state, thinkingLevel: event.thinkingLevel };
+    if (typeof event.fastMode === "boolean") this.state = { ...this.state, fastMode: event.fastMode };
     this.emit({ type: "session.config", sessionId: this.sessionId, config: this.configState() });
   }
 
