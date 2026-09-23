@@ -255,3 +255,41 @@ describe("OmO provider identity", () => {
     expect(createOmoProvider().id).toBe("omo");
   });
 });
+
+describe("stale OmO session models", () => {
+  it("drops a model the current catalog no longer advertises when opening a session", async () => {
+    const { sanitizeSessionModel } = await import("./provider.js");
+    const catalog = [model("cliproxyapi-last", "gpt-6-luna")];
+
+    expect(sanitizeSessionModel("local-proxy/gpt-5.6-sol", catalog)).toBeUndefined();
+    expect(sanitizeSessionModel("cliproxyapi-last/gpt-6-luna", catalog)).toBe("cliproxyapi-last/gpt-6-luna");
+    expect(sanitizeSessionModel(undefined, catalog)).toBeUndefined();
+
+    const { createOmoProvider } = await import("./provider.js");
+    queued.push({ models: catalog });
+    const connection = await createOmoProvider().connect({ versions: [1], capabilities: [] });
+    const openedConfigs: Array<{ model?: string }> = [];
+    connection.onEvent((event) => {
+      if (event.type === "session.config") openedConfigs.push(event.config);
+    });
+    await connection.send({
+      type: "session.open",
+      requestId: "stale-model-open",
+      sessionId: "stale-model-session",
+      history: "skip",
+      config: {
+        cwd: agentDir,
+        env: {},
+        mcpServers: {},
+        settings: {},
+        persist: false,
+        model: "local-proxy/gpt-5.6-sol",
+      },
+    });
+    await vi.waitFor(() => {
+      if (openedConfigs.length === 0) throw new Error("session config not emitted yet");
+    });
+    expect(openedConfigs[0]?.model).toBeUndefined();
+    await connection.close();
+  });
+});
