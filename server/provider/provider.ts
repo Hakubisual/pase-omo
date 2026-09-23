@@ -18,6 +18,7 @@ import {
   OMO_MODES,
   OmoSession,
   type OmoModelRecord,
+  settledModels,
   toProviderModels,
 } from "./omo-session.js";
 import { readSessionHeaders, sameCwd, sessionsDir } from "./omo-store.js";
@@ -82,7 +83,9 @@ async function probeCatalog(
   });
   proc.start();
   try {
-    const data = await proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 240_000);
+    const models = await settledModels(
+      async () => (await proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 240_000)).models ?? [],
+    );
     let defaultModel: string | undefined;
     try {
       const state = await proc.call<{ model?: { provider?: unknown; id?: unknown } }>("get_state", {}, 240_000);
@@ -95,7 +98,7 @@ async function probeCatalog(
       // the first entry when OmO's own default cannot be read.
       log(`get_state during catalog probe failed: ${describe(error)}`);
     }
-    return { models: data.models ?? [], fingerprint, defaultModel };
+    return { models, fingerprint, defaultModel };
   } finally {
     proc.stop();
   }

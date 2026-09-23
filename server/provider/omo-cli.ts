@@ -94,6 +94,23 @@ function fromGlobalInstall(searched: string[]): OmoLaunch | undefined {
   return undefined;
 }
 
+/**
+ * The daemon user's own Bun global install: `~/.bun/bin/bun` running
+ * `~/.bun/install/global/node_modules/omo-ai/bin/omo.js`.
+ *
+ * Preferred over a PATH search because the daemon's PATH is not the login
+ * shell's: an `omo` found there may be a wrapper or version-manager shim that
+ * exits 127 when it cannot find its own runtime. Both paths hang off the
+ * daemon user's home, so each machine uses the omo of the account running Paseo.
+ */
+function fromBunGlobalInstall(): OmoLaunch | undefined {
+  const home = homedir();
+  const bun = join(home, ".bun", "bin", process.platform === "win32" ? "bun.exe" : "bun");
+  const entry = join(home, ".bun", "install", "global", "node_modules", "omo-ai", "bin", "omo.js");
+  if (!existsSync(entry) || !executable(bun)) return undefined;
+  return { command: bun, base: [entry], origin: `bun global install at ${entry}` };
+}
+
 /** First executable named `name` on PATH, resolved through PATHEXT on Windows. */
 export function fromPathNamed(name: string): string | undefined {
   const entries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
@@ -143,7 +160,10 @@ export async function modelConfigFingerprint(env: NodeJS.ProcessEnv = process.en
   const user = join(agent, "..");
   const targets: Array<[string, string]> = [
     [agent, "models.json"],
-    [agent, "models-store.json"],
+    // Not models-store.json: OmO's model extensions rewrite that cache on every
+    // launch, including the catalog probe itself, so its mtime moves each time
+    // the catalog is read. Keying on it made every probe invalidate its own
+    // answer, and the daemon re-probed forever, leaving clients on "loading".
     [agent, "settings.json"],
     [user, "omo.jsonc"],
     [user, "omo.json"],
@@ -195,6 +215,9 @@ export function resolveOmoLaunch(env: NodeJS.ProcessEnv = process.env): OmoLaunc
     }
     return { command: binary, base: [], origin: "PASEO_OMO_BINARY" };
   }
+
+  const bunGlobal = fromBunGlobalInstall();
+  if (bunGlobal) return bunGlobal;
 
   const onPath = fromPath();
   if (onPath) return { command: onPath, base: [], origin: "PATH" };

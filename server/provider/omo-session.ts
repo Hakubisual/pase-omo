@@ -120,6 +120,33 @@ export function allThinkingOptions(models: readonly ProviderModel[]): ProviderTh
 }
 
 /**
+ * Ask OmO for its models until the list stops growing.
+ *
+ * Extensions such as the CPA plugin register their providers asynchronously,
+ * a few hundred milliseconds after the RPC channel answers. The first
+ * `get_available_models` reply can therefore carry only the static models.json
+ * entries (measured: 3 models, then 103 a quarter second later), and caching
+ * that first answer is what left new agents with an almost empty model picker.
+ * Re-asking until two consecutive answers are no larger waits exactly as long
+ * as the registration takes, and never shrinks a list it has already seen.
+ */
+export async function settledModels(
+  fetchModels: () => Promise<OmoModelRecord[]>,
+  options: { intervalMs?: number; maxAttempts?: number } = {},
+): Promise<OmoModelRecord[]> {
+  const intervalMs = options.intervalMs ?? 250;
+  const maxAttempts = options.maxAttempts ?? 20;
+  let models = await fetchModels();
+  for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+    const next = await fetchModels();
+    if (next.length <= models.length) return models;
+    models = next;
+  }
+  return models;
+}
+
+/**
  * Env var carrying this client's RPC capabilities to the OmO child, comma
  * separated.
  */
@@ -463,8 +490,11 @@ export class OmoSession {
 
   private async refreshCatalog(): Promise<void> {
     try {
-      const models = await this.proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 60_000);
-      this.models = toProviderModels(models.models ?? []);
+      const models = await settledModels(
+        async () =>
+          (await this.proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 60_000)).models ?? [],
+      );
+      this.models = toProviderModels(models);
     } catch (error) {
       this.options.log(`get_available_models failed: ${describe(error)}`);
     }

@@ -149,7 +149,8 @@ describe("OmO catalog freshness", () => {
     ]);
     await session.connection.close();
     // Both requests re-probed, and the first one was the only spawn before the edit.
-    expect(processes.map((entry) => entry.calls)).toEqual([1, 1]);
+    // Each probe asks twice: once for the models, once to confirm the list settled.
+    expect(processes.map((entry) => entry.calls)).toEqual([2, 2]);
   });
 
   it("reuses the catalog while the model config is unchanged", async () => {
@@ -172,6 +173,22 @@ describe("OmO catalog freshness", () => {
     await rewriteModels('{"providers":{"cliproxyapi-opus":{}}}', 30);
     const second = await createOmoProvider().getCatalogCacheKey?.({ scope: "global" });
     expect(second).not.toBe(first);
+  });
+
+  it("ignores models-store.json, which OmO rewrites on every launch", async () => {
+    const { createOmoProvider } = await import("./provider.js");
+    await rewriteModels('{"providers":{}}', 0);
+    const before = await createOmoProvider().getCatalogCacheKey?.({ scope: "global" });
+
+    // The catalog probe itself refreshes this cache; if it moved the key, every
+    // probe would invalidate its own answer and the client would never leave "loading".
+    const store = join(agentDir, "models-store.json");
+    await writeFile(store, '{"cliproxyapi":{"kind":"catalog"}}');
+    const later = new Date(Date.now() + 90_000);
+    await utimes(store, later, later);
+    const after = await createOmoProvider().getCatalogCacheKey?.({ scope: "global" });
+
+    expect(after).toBe(before);
   });
 
   it("tracks the user-scope omo.jsonc, which sits above the agent directory", async () => {
