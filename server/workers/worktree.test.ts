@@ -38,7 +38,7 @@ describe("Git worktree manager", () => {
 
   it("ensures a directory is a valid git repository", async () => {
     const { repoRoot } = await ensureGitRepository(repoDir);
-    expect(repoRoot.toLowerCase()).toBe(path.resolve(repoDir).toLowerCase());
+    expect(repoRoot.toLowerCase()).toBe(fs.realpathSync.native(repoDir).toLowerCase());
   });
 
   it("explicitly rejects non-git repositories with clear error", async () => {
@@ -82,7 +82,7 @@ describe("Git worktree manager", () => {
 
     const worktrees = await listWorktrees(repoDir);
     const found = worktrees.find(
-      (wt) => path.resolve(wt.path).toLowerCase() === path.resolve(targetPath).toLowerCase(),
+      (wt) => fs.realpathSync.native(wt.path).toLowerCase() === fs.realpathSync.native(targetPath).toLowerCase(),
     );
     expect(found).toBeDefined();
     expect(found?.branch).toBe("omo/worker-alpha");
