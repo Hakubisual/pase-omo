@@ -9,6 +9,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@code-yeongyu/senpi": "2026.9.26",
     "@getpaseo/client": "0.8.0",
     "@getpaseo/plugin": "0.8.0",
     "@getpaseo/protocol": "0.8.0",
