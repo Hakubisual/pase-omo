@@ -159,7 +159,7 @@ export interface FormQuestion {
  * `actions` for that kind. Without this input the card had nothing to show and
  * no way to answer. The card keys answers by header, so headers are made unique.
  */
-export function questionForm(questions: readonly Json[]) {
+export function questionForm(questions: readonly Json[], allowOther = true) {
   const seen = new Set<string>();
   const form: FormQuestion[] = [];
   const cards = questions.map((q, index) => {
@@ -180,7 +180,7 @@ export function questionForm(questions: readonly Json[]) {
       labels: options.map((option) => option.label),
       multiSelect,
     });
-    return { question: String(q.question ?? header), header, options, multiSelect, allowOther: true };
+    return { question: String(q.question ?? header), header, options, multiSelect, allowOther };
   });
   return { input: { questions: cards }, form };
 }
@@ -739,6 +739,22 @@ export class OmoSession {
       this.proc.notify({ type: "extension_ui_response", id: permissionId, cancelled: true });
     } else if (pending.method === "confirm") {
       this.proc.notify({ type: "extension_ui_response", id: permissionId, confirmed: true });
+    } else if (
+      pending.method === "select" &&
+      pending.form &&
+      typeof cardAnswers === "object" &&
+      cardAnswers !== null &&
+      !Array.isArray(cardAnswers)
+    ) {
+      // A selection has exactly one card question and must resolve to one of its
+      // labels; anything else would hand OmO a value it never offered.
+      const [choice] = pending.form;
+      const value = choice ? cardAnswers[choice.header] : undefined;
+      this.proc.notify(
+        typeof value === "string" && choice?.labels.includes(value)
+          ? { type: "extension_ui_response", id: permissionId, value }
+          : { type: "extension_ui_response", id: permissionId, cancelled: true },
+      );
     } else if (pending.form && typeof cardAnswers === "object" && cardAnswers !== null && !Array.isArray(cardAnswers)) {
       const answers: Record<string, { selected: string[]; text?: string }> = {};
       for (const question of pending.form) {
@@ -1107,7 +1123,13 @@ export class OmoSession {
         return { id: actionId, label, behavior: "allow" as const };
       });
       const title = String(event.title ?? "OmO needs a choice");
-      this.pendingUi.set(id, { method: "select", title, optionByAction });
+      // Same native question card as `question`, as one single-select question
+      // with every option and no free text: OmO only accepts a listed value.
+      const { input, form } = questionForm(
+        [{ header: "Choice", question: title, options: options.map((label) => ({ label })), multiSelect: false }],
+        false,
+      );
+      this.pendingUi.set(id, { method: "select", title, optionByAction, form });
       this.emit({
         type: "session.permission",
         sessionId: this.sessionId,
@@ -1116,6 +1138,7 @@ export class OmoSession {
           name: "select",
           kind: "question",
           title,
+          input,
           actions: [...actions, { id: "deny", label: "Cancel", behavior: "deny" as const }],
         },
       });

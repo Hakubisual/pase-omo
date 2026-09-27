@@ -282,6 +282,43 @@ describe("approval RPC handlers", () => {
     });
   });
 
+  it("gives Paseo's question card every select option and returns the chosen label as the value", () => {
+    const { process, session, emit } = createSession();
+    const options = ["A", "B", "C", "D", "E", "F", "G", "H", "Production"];
+    process.emit({ type: "extension_ui_request", id: "select-1", method: "select", title: "Choose environment", options });
+
+    const permission = emit.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === "session.permission");
+    expect(permission.request.kind).toBe("question");
+    expect(permission.request.input).toEqual({
+      questions: [
+        {
+          question: "Choose environment",
+          header: "Choice",
+          options: options.map((label) => ({ label })),
+          multiSelect: false,
+          allowOther: false,
+        },
+      ],
+    });
+
+    session.respondToPermission("select-1", {
+      behavior: "allow",
+      updatedInput: { ...permission.request.input, answers: { Choice: "Production" } },
+    });
+    expect(process.notify).toHaveBeenCalledWith({ type: "extension_ui_response", id: "select-1", value: "Production" });
+  });
+
+  it("cancels a select the card answers with a value OmO never offered", () => {
+    const { process, session } = createSession();
+    process.emit({ type: "extension_ui_request", id: "select-1", method: "select", title: "Pick", options: ["A", "B"] });
+
+    session.respondToPermission("select-1", { behavior: "allow", updatedInput: { answers: { Choice: "Z" } } });
+
+    expect(process.notify).toHaveBeenCalledWith({ type: "extension_ui_response", id: "select-1", cancelled: true });
+  });
+
   it("cancels a question the card submits with no answers instead of leaving OmO waiting", () => {
     const { process, session } = createSession();
     process.emit({
