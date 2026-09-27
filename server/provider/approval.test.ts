@@ -46,7 +46,12 @@ vi.mock("./omo-process.js", () => {
 
 const sessions: OmoSession[] = [];
 
-function createSession(sessionId = "provider-session-1"): { process: MockProcessInstance; session: OmoSession } {
+function createSession(sessionId = "provider-session-1"): {
+  process: MockProcessInstance;
+  session: OmoSession;
+  emit: ReturnType<typeof vi.fn>;
+} {
+  const emit = vi.fn();
   const session = new OmoSession({
     paseoSessionId: sessionId,
     launch: { command: "omo", base: [], origin: "test" },
@@ -58,14 +63,14 @@ function createSession(sessionId = "provider-session-1"): { process: MockProcess
       persist: true,
     },
     capabilities: ["permission"],
-    emit: vi.fn(),
+    emit,
     log: vi.fn(),
     onRuntimeFailure: vi.fn(),
   });
   sessions.push(session);
   const process = processState.instances.at(-1);
   if (!process) throw new Error("Missing mocked OmO process");
-  return { process, session };
+  return { process, session, emit };
 }
 
 function context(agentId: string, runtimeSessionId = "provider-session-1"): PluginHandlerContext {
@@ -203,6 +208,92 @@ describe("approval RPC handlers", () => {
         context("agent-1"),
       ),
     ).rejects.toThrow(/Unknown pending OmO UI request: missing-request/);
+  });
+
+  it("gives Paseo's question card every question and maps its answers back by id", () => {
+    // Paseo draws a kind:"question" permission from request.input alone; without
+    // it the card rendered empty with no way to answer.
+    const { process, session, emit } = createSession();
+    process.emit({
+      type: "extension_ui_request",
+      id: "question-1",
+      method: "question",
+      questions: [
+        {
+          id: "region",
+          header: "Region",
+          question: "Which region?",
+          options: [{ label: "Seoul", description: "ap-northeast-2" }, { label: "Tokyo" }],
+          multiSelect: false,
+        },
+        {
+          id: "checks",
+          header: "Checks",
+          question: "Which checks?",
+          options: [{ label: "Lint" }, { label: "Unit, fast" }, { label: "E2E" }],
+          multiSelect: true,
+        },
+        { id: "notes", header: "Region", question: "Anything else?", options: [], multiSelect: false },
+      ],
+    });
+
+    const permission = emit.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === "session.permission");
+    expect(permission.request.kind).toBe("question");
+    expect(permission.request.input).toEqual({
+      questions: [
+        {
+          question: "Which region?",
+          header: "Region",
+          options: [{ label: "Seoul", description: "ap-northeast-2" }, { label: "Tokyo" }],
+          multiSelect: false,
+          allowOther: true,
+        },
+        {
+          question: "Which checks?",
+          header: "Checks",
+          options: [{ label: "Lint" }, { label: "Unit, fast" }, { label: "E2E" }],
+          multiSelect: true,
+          allowOther: true,
+        },
+        { question: "Anything else?", header: "Region (2)", options: [], multiSelect: false, allowOther: true },
+      ],
+    });
+
+    // The card's submission: the request input plus one string per header.
+    session.respondToPermission("question-1", {
+      behavior: "allow",
+      updatedInput: {
+        ...permission.request.input,
+        answers: { Region: "Seoul", Checks: "Lint, Unit, fast, also smoke", "Region (2)": "ship it" },
+      },
+    });
+
+    expect(process.notify).toHaveBeenCalledTimes(1);
+    expect(process.notify).toHaveBeenCalledWith({
+      type: "extension_ui_response",
+      id: "question-1",
+      answers: {
+        region: { selected: ["Seoul"] },
+        checks: { selected: ["Lint", "Unit, fast"], text: "also smoke" },
+        notes: { selected: [], text: "ship it" },
+      },
+    });
+  });
+
+  it("cancels a question the card submits with no answers instead of leaving OmO waiting", () => {
+    const { process, session } = createSession();
+    process.emit({
+      type: "extension_ui_request",
+      id: "question-1",
+      method: "question",
+      questions: [{ id: "region", header: "Region", question: "Which region?", options: [], multiSelect: false }],
+    });
+
+    session.respondToPermission("question-1", { behavior: "allow", updatedInput: { answers: {} } });
+
+    expect(process.notify).toHaveBeenCalledWith({ type: "extension_ui_response", id: "question-1", cancelled: true });
   });
 
   it("registers both approval RPC handlers for entry wiring", () => {
