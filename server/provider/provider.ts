@@ -13,6 +13,7 @@ import { OmoProcess } from "./omo-process.js";
 import {
   allThinkingOptions,
   describe,
+  encodeModelId,
   OMO_MODES,
   OmoSession,
   type OmoModelRecord,
@@ -46,12 +47,21 @@ function log(message: string): void {
  * captured before the CLI starts and returned with the models so a caller can
  * tell whether the catalog it holds still describes the config on disk: a probe
  * that raced an edit would otherwise be stored as if it were current.
+ *
+ * `defaultModel` is OmO's own default, the model `get_state` reports, encoded
+ * the same way catalog ids are. It is absent when that call fails or names no
+ * model: the model list is still the answer, and the caller falls back to the
+ * first entry.
  */
 async function probeCatalog(
   launch: OmoLaunch,
   cwd: string,
   fingerprint: string | undefined,
-): Promise<{ models: OmoModelRecord[]; fingerprint: string | undefined }> {
+): Promise<{
+  models: OmoModelRecord[];
+  fingerprint: string | undefined;
+  defaultModel: string | undefined;
+}> {
   const proc = new OmoProcess({
     launch,
     args: ["--mode", "rpc", "--no-session"],
@@ -63,7 +73,19 @@ async function probeCatalog(
   proc.start();
   try {
     const data = await proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 240_000);
-    return { models: data.models ?? [], fingerprint };
+    let defaultModel: string | undefined;
+    try {
+      const state = await proc.call<{ model?: { provider?: unknown; id?: unknown } }>("get_state", {}, 240_000);
+      const model = state?.model;
+      if (model && typeof model.provider === "string" && typeof model.id === "string") {
+        defaultModel = encodeModelId({ provider: model.provider, id: model.id });
+      }
+    } catch (error) {
+      // Advisory. A probe that listed models still answers; Paseo falls back to
+      // the first entry when OmO's own default cannot be read.
+      log(`get_state during catalog probe failed: ${describe(error)}`);
+    }
+    return { models: data.models ?? [], fingerprint, defaultModel };
   } finally {
     proc.stop();
   }
@@ -102,6 +124,8 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
   let catalog: OmoModelRecord[] | undefined;
   /** Model-config identity the cached `catalog` was discovered under. */
   let catalogFingerprint: string | undefined;
+  /** OmO's own default from the same probe as `catalog`, encoded like a catalog id. */
+  let catalogDefaultModel: string | undefined;
   let closed = false;
 
   const emit = (event: ProviderEvent): void => {
@@ -124,8 +148,13 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
       const probed = await probeCatalog(launch, input.cwd ?? process.cwd(), fingerprint);
       catalog = probed.models;
       catalogFingerprint = probed.fingerprint;
+      catalogDefaultModel = probed.defaultModel;
     }
     const models = toProviderModels(catalog);
+    const defaultModel =
+      catalogDefaultModel !== undefined && models.some((entry) => entry.id === catalogDefaultModel)
+        ? catalogDefaultModel
+        : models[0]?.id;
     emit({
       type: "catalog",
       requestId: input.requestId,
@@ -133,7 +162,7 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
         models,
         modes: OMO_MODES.map((mode) => ({ ...mode })),
         thinkingOptions: allThinkingOptions(models),
-        ...(models[0] ? { defaultModel: models[0].id } : {}),
+        ...(defaultModel !== undefined ? { defaultModel } : {}),
         defaultMode: "default",
       },
     });
