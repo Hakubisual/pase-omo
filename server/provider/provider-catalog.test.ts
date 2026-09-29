@@ -33,7 +33,6 @@ vi.mock("./omo-process.js", () => {
       processes.push(this.record);
     }
     stop(): void {}
-<<<<<<< HEAD
     async call(command: string) {
       // Only model listing is a probe. get_state rides the same spawn and must
       // not change the call counts the freshness cases assert.

@@ -187,8 +187,12 @@ export async function modelConfigFingerprint(env: NodeJS.ProcessEnv = process.en
  *
  * `PASEO_OMO_COMMAND` wins and is a JSON array, for example
  * `["C:/Users/me/.bun/bin/bun.exe","C:/.../omo-ai/bin/omo.js"]`.
- * `PASEO_OMO_BINARY` names a single executable. Otherwise PATH is searched for
- * an `omo` launcher, then Bun's global `omo-ai` entry point.
+ * `PASEO_OMO_BINARY` names a single executable. Otherwise the daemon user's own
+ * Bun global `omo-ai` is used when it exists, then PATH is searched for an `omo`
+ * launcher, then the other package-manager global roots. The Bun install is
+ * preferred over PATH because the daemon's PATH is not the login shell's and an
+ * `omo` found there may be a shim that exits without its runtime; note that this
+ * also means a PATH install newer than the Bun global one is not picked up.
  */
 export function resolveOmoLaunch(env: NodeJS.ProcessEnv = process.env): OmoLaunch {
   const explicit = env.PASEO_OMO_COMMAND?.trim();
