@@ -36,6 +36,10 @@ OmO 5 changed how it talks to its hosts, and this plugin now speaks it directly:
 Every `workflow` run opens as a board: one column per wave, a card per node,
 and edges that carry the work from left to right.
 
+![A workflow run on the OmO board: fifteen nodes in seven waves, eight settled and three running](docs/images/board.png)
+
+![Dots flowing along the edges into the nodes that are running](docs/images/board-flow.gif)
+
 - **It follows what is running.** The board picks the session that is running
   right now and shows its one live run. The session list and the stats bar stay
   out of the way; *Other sessions* opens them when you need them.
@@ -48,22 +52,58 @@ and edges that carry the work from left to right.
   header shows how far along the whole run is.
 
 Tap a node for its details — turns, tool calls, the model, what it was asked
-to do and what it is doing now.
+to do and what it is doing now:
+
+![The node inspector open under the board](docs/images/board-inspector.png)
 
 Subtasks live in a small drawer beside the board, so they never push the graph
-off screen. Open it with the **Subtasks** button; running work sorts to the top.
+off screen. Open it with the **Subtasks** button; running work sorts to the top:
+
+![The subtask drawer open beside the board](docs/images/board-subtasks.png)
 
 The activity log under the board lists every start, finish, error and live
 progress line, newest first. Tap a line to jump to its node.
 
 The previous card view is still one click away under **Cards**.
 
-## In the chat and on your phone
+## In the chat
 
-OmO's questions arrive as Paseo's native question card, and a turn that worked
-through a checklist ends with a single todo card. On a phone the board is the
-same board — same cards, same flow — scrolling sideways instead of shrinking
-the type, with the subtask drawer below the graph.
+OmO's questions arrive as Paseo's native question card:
+
+<img src="docs/images/chat-question.png" width="720" alt="Paseo's question card asking which loop opens the set, with two options">
+
+And a turn that worked through a checklist ends with a single todo card:
+
+<img src="docs/images/chat-todo.png" width="720" alt="One todo card at the end of a turn: two items done, one in progress">
+
+## On your phone
+
+The board is the same board on a phone — same cards, same flow — and it scrolls
+sideways instead of shrinking the type. The subtask drawer drops below the
+graph, where there is room for it.
+
+<table>
+<tr>
+<td width="33%"><img src="docs/images/mobile-board.png" alt="The board on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-running.png" alt="The running waves on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-inspector.png" alt="The node inspector on a phone"></td>
+</tr>
+<tr>
+<td align="center"><sub>Board</sub></td>
+<td align="center"><sub>Running waves</sub></td>
+<td align="center"><sub>Node details</sub></td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/images/mobile-subtasks.png" alt="The subtask drawer on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-question.png" alt="An OmO question on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-todo.png" alt="The todo card on a phone"></td>
+</tr>
+<tr>
+<td align="center"><sub>Subtasks</sub></td>
+<td align="center"><sub>Question card</sub></td>
+<td align="center"><sub>Todo card</sub></td>
+</tr>
+</table>
 
 ## Everything else
 
