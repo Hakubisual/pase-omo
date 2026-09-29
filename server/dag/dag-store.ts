@@ -96,8 +96,13 @@ export function normalizeTask(raw: unknown): DagTask | undefined {
     ...pick("progress", terminal ? undefined : (text(progress, 512) ?? text(live?.activity, 512))),
     ...pick("turns", count(live?.turns) ?? count(stats?.turns)),
     ...pick("toolCalls", count(live?.tool_calls) ?? count(stats?.tool_calls)),
+    ...pick("tokensPerSecond", rate(stats?.tokens_per_second)),
   };
   return task;
+}
+
+function rate(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function pick<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {

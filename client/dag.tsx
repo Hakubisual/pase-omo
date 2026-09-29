@@ -38,6 +38,10 @@ import {
 import type { DagDestination } from "../shared/navigate.js";
 import { agentDagSnapshotRpc } from "../shared/row.js";
 import { graphTypography, READABLE_MIN_SCALE } from "./graph-visual.js";
+import { WorkflowBoard } from "./workflow-board.js";
+import { focusRun, runSubtasks } from "./workflow-layout.js";
+
+export type RunViewMode = "board" | "cards";
 
 // ============================================================================
 // Formatting & Pure Helpers
@@ -844,6 +848,22 @@ export interface SessionSelectorBarProps {
   isRefreshing: boolean;
   theme: PluginTheme;
   compact: boolean;
+  /** Start as one line naming the watched session; the full list opens on demand. */
+  collapsed?: boolean;
+}
+
+/**
+ * The session a board should follow: the newest one with a DAG run and
+ * something running. A session with no run has no graph to show, and a stale
+ * task stuck on "running" must not pull the board off a run that just finished.
+ */
+export function followedSessionId(sessions: DagSession[]): string | null {
+  let followed: DagSession | undefined;
+  for (const session of sessions) {
+    if (session.runCount === 0 || sessionRunningCount(session) === 0) continue;
+    if (!followed || session.updatedAt.localeCompare(followed.updatedAt) > 0) followed = session;
+  }
+  return followed?.id ?? null;
 }
 
 export function SessionSelectorBar({
@@ -855,7 +875,9 @@ export function SessionSelectorBar({
   isRefreshing,
   theme,
   compact,
+  collapsed = false,
 }: SessionSelectorBarProps): React.JSX.Element {
+  const [listOpen, setListOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const [showAllDropdown, setShowAllDropdown] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
@@ -883,6 +905,28 @@ export function SessionSelectorBar({
     const { x, y, width, height } = event.nativeEvent.layout;
     pillSpans.current[sessionId] = compact ? { start: y, size: height } : { start: x, size: width };
   };
+
+  if (collapsed && !listOpen) {
+    const watched = sessions.find((session) => session.id === selectedSessionId);
+    const running = watched ? sessionRunningCount(watched) : 0;
+    return (
+      <View style={styles.sessionLine}>
+        <Text style={[styles.sessionLineText, { color: theme.colors.foregroundMuted }]} numberOfLines={1} ellipsizeMode="middle">
+          {watched ? `Session ${watched.title ?? watched.id.slice(0, 13)}` : "No session selected"}
+          {running > 0 ? ` · ● ${running} running` : ""}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Pick another session"
+          accessibilityState={{ expanded: false }}
+          onPress={() => setListOpen(true)}
+          style={styles.sessionLineButton}
+        >
+          <Text style={[styles.sessionLineText, { color: theme.colors.foregroundMuted }]}>Other sessions ▾</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -2108,6 +2152,9 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   const [selectedNodeByRun, setSelectedNodeByRun] = useState<Record<string, string | null>>({});
   const [foldedTasks, setFoldedTasks] = useState<Record<string, boolean>>({});
   const [tasksSectionFolded, setTasksSectionFolded] = useState<boolean>(false);
+  const [runViewMode, setRunViewMode] = useState<RunViewMode>("board");
+  const [boardRunId, setBoardRunId] = useState<string | null>(null);
+  const [pickedSession, setPickedSession] = useState(false);
 
   // A new directory restores whichever session was last watched there.
   const prevCwdRef = useRef(cwd);
@@ -2133,6 +2180,17 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   });
 
   const sessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data]);
+
+  // The board follows whichever session is running right now, until the user
+  // picks one themselves.
+  const followedId = followedSessionId(sessions);
+  useEffect(() => {
+    if (isAgentScoped || pickedSession || runViewMode !== "board" || followedId === null) return;
+    if (followedId !== selectedSessionId) {
+      setSelectedSessionId(followedId);
+      setBoardRunId(null);
+    }
+  }, [followedId, isAgentScoped, pickedSession, runViewMode, selectedSessionId]);
 
   // The selection is sticky: a refreshed list moves it only once the selected
   // session stops being listed, so sessions created mid-run never steal it.
@@ -2241,6 +2299,8 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
   const handleSelectSession = useCallback(
     (sessionId: string) => {
       setSelectedSessionId(sessionId);
+      setPickedSession(true);
+      setBoardRunId(null);
       rememberSelectedSession(cwd, sessionId);
     },
     [cwd],
@@ -2296,6 +2356,7 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
           isRefreshing={isManualRefreshing}
           theme={theme}
           compact={compact}
+          collapsed={runViewMode === "board"}
         />
       ) : null}
 
@@ -2397,14 +2458,14 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
       {/* Snapshot Content (When Session Selected) */}
       {hasSelectedSession && (
         <>
-          {/* Summary Stats */}
-          <SessionStatsBar
+          {/* Summary Stats: the board's own header already says how far the run is. */}
+          {runViewMode === "board" ? null : <SessionStatsBar
             stats={stats}
             scopeLabel={isAgentScoped ? "This agent's session" : "Selected session"}
             {...(isAgentScoped ? {} : { workspace: workspaceStats })}
             theme={theme}
             compact={compact}
-          />
+          />}
 
           {/* Snapshot Loading State */}
           {isLoadingSnapshot ? (
@@ -2476,9 +2537,95 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
                 <Text style={[styles.sectionTitle, { color: theme.colors.foreground }]}>
                   Workflow DAG graphs ({snapshot.runs.length})
                 </Text>
+                <View style={styles.viewModeGroup}>
+                  {([
+                    ["board", "Board"],
+                    ["cards", "Cards"],
+                  ] as const).map(([mode, label]) => {
+                    const active = runViewMode === mode;
+                    return (
+                      <Pressable
+                        key={mode}
+                        accessibilityRole="button"
+                        accessibilityLabel={`DAG view: ${label}`}
+                        accessibilityState={{ selected: active }}
+                        onPress={() => setRunViewMode(mode)}
+                        style={[
+                          styles.viewModeButton,
+                          {
+                            backgroundColor: active ? theme.colors.surface2 : "transparent",
+                            borderColor: active ? theme.colors.accent : theme.colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.viewModeText,
+                            { color: active ? theme.colors.foreground : theme.colors.foregroundMuted },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
 
-              {snapshot.runs.map((run) => (
+              {runViewMode === "board" ? (() => {
+                const run = focusRun(snapshot.runs, boardRunId);
+                if (!run) return null;
+                const others = snapshot.runs.filter((candidate) => candidate.id !== run.id);
+                return (
+                  <>
+                    {others.length > 0 ? (
+                      <View style={styles.boardRunPicker}>
+                        {[run, ...others].map((candidate) => {
+                          const active = candidate.id === run.id;
+                          return (
+                            <Pressable
+                              key={candidate.id}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Select DAG run: ${candidate.name || candidate.id}`}
+                              accessibilityState={{ selected: active }}
+                              onPress={() => setBoardRunId(candidate.id)}
+                              style={[
+                                styles.boardRunChip,
+                                {
+                                  borderColor: active ? theme.colors.accent : theme.colors.border,
+                                  backgroundColor: active ? theme.colors.surface2 : "transparent",
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.boardRunChipText,
+                                  { color: active ? theme.colors.foreground : theme.colors.foregroundMuted },
+                                ]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
+                                {candidate.status === "running" ? "● " : ""}
+                                {candidate.name || candidate.id}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                    <WorkflowBoard
+                      key={run.id}
+                      run={run}
+                      tasksMap={allTasksMap}
+                      selectedNodeId={selectedNodeByRun[run.id] ?? null}
+                      onSelectNode={(nodeId) => handleSelectNode(run.id, nodeId)}
+                      subtasks={runSubtasks(run, childTasksMap, standaloneRootTasks)}
+                      theme={theme}
+                      compact={compact}
+                    />
+                  </>
+                );
+              })() : snapshot.runs.map((run) => (
                 <DagRunCard
                   key={run.id}
                   run={run}
@@ -2497,8 +2644,8 @@ export function DagMainView({ cwd, theme, compact, agentId }: DagMainViewProps):
             </View>
           ) : null}
 
-          {/* Standalone / Subtasks Section */}
-          {snapshot && standaloneRootTasks.length > 0 ? (
+          {/* Standalone / Subtasks Section: the board carries these in its drawer. */}
+          {snapshot && standaloneRootTasks.length > 0 && !(runViewMode === "board" && snapshot.runs.length > 0) ? (
             <View style={styles.sectionContainer}>
               <Pressable
                 accessibilityRole="button"
@@ -3163,6 +3310,54 @@ const styles = StyleSheet.create({
   },
   progressBarSegment: {
     height: "100%",
+  },
+  sessionLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
+  sessionLineText: {
+    fontSize: 12,
+  },
+  sessionLineButton: {
+    minHeight: 32,
+    paddingHorizontal: 6,
+    justifyContent: "center",
+  },
+  boardRunPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  boardRunChip: {
+    minHeight: 32,
+    maxWidth: 260,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderRadius: 6,
+    justifyContent: "center",
+  },
+  boardRunChipText: {
+    fontSize: 12,
+  },
+  viewModeGroup: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  viewModeButton: {
+    minHeight: 32,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewModeText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   graphContainer: {
     gap: 12,

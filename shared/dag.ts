@@ -12,6 +12,7 @@ export const DagTaskSchema = z.object({
   progress: z.string().optional(),
   turns: z.number().int().nonnegative().optional(),
   toolCalls: z.number().int().nonnegative().optional(),
+  tokensPerSecond: z.number().nonnegative().optional(),
   parentTaskId: z.string().optional(),
 });
 export type DagTask = z.infer<typeof DagTaskSchema>;

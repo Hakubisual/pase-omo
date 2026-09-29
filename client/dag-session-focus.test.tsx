@@ -29,6 +29,7 @@ vi.mock("react", async (importOriginal) => {
 
 const {
   SessionSelectorBar,
+  followedSessionId,
   SessionStatsBar,
   calculateSessionStats,
   calculateWorkspaceStats,
@@ -201,4 +202,29 @@ test("the refresh button only spins for a refresh the user asked for", () => {
 
   const manual = SessionSelectorBar({ ...props, isRefreshing: true });
   expect(renderedText(manual)).not.toContain("⟳ Refresh");
+});
+
+test("the board follows the newest running session and names it on one line", () => {
+  const idle = session("idle", { runCount: 1, updatedAt: "2026-09-29T05:00:00.000Z" });
+  const older = session("older", { runCount: 1, runningCount: 1, updatedAt: "2026-09-29T01:00:00.000Z" });
+  const live = session("live", { runCount: 1, runningCount: 2, updatedAt: "2026-09-29T03:00:00.000Z" });
+  const strayTask = session("stray", { taskCount: 1, runningCount: 1, updatedAt: "2026-09-29T09:00:00.000Z" });
+  expect(followedSessionId([idle, older, live, strayTask])).toBe("live");
+  // A finished run stays on screen: a run-less session with a task stuck on running is not followed.
+  expect(followedSessionId([idle, strayTask])).toBeNull();
+
+  const bar = SessionSelectorBar({
+    cwd: "E:/project",
+    sessions: [idle, older, live],
+    selectedSessionId: "live",
+    onSelectSession: () => {},
+    onRefresh: () => {},
+    isRefreshing: false,
+    theme,
+    compact: false,
+    collapsed: true,
+  });
+  const text = JSON.stringify(bar);
+  expect(text).toContain("2 running");
+  expect(text).not.toContain("older");
 });
