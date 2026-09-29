@@ -333,6 +333,40 @@ describe("approval RPC handlers", () => {
     expect(process.notify).toHaveBeenCalledWith({ type: "extension_ui_response", id: "question-1", cancelled: true });
   });
 
+  it("preserves a question id that is also an Object prototype key", () => {
+    // Given an OmO question with an unrestricted string id.
+    const { process, session } = createSession();
+    process.emit({
+      type: "extension_ui_request", id: "prototype-question", method: "question",
+      questions: [{ id: "__proto__", header: "Choice", question: "Pick", options: [{ label: "A" }] }],
+    });
+
+    // When the native card submits its answer.
+    session.respondToPermission("prototype-question", {
+      behavior: "allow", updatedInput: { answers: { Choice: "A" } },
+    });
+
+    // Then the answer remains an own JSON key rather than changing the map prototype.
+    expect(process.notify).toHaveBeenCalledWith({
+      type: "extension_ui_response", id: "prototype-question",
+      answers: { ["__proto__"]: { selected: ["A"] } },
+    });
+  });
+
+  it.each([undefined, {}, { answers: [] }])("cancels a select without a valid card answer (%j)", (updatedInput) => {
+    // Given a pending native selection with no legacy action chosen.
+    const { process, session } = createSession();
+    process.emit({ type: "extension_ui_request", id: "select-empty", method: "select", options: ["A"] });
+
+    // When an empty or malformed submission crosses the permission boundary.
+    session.respondToPermission("select-empty", {
+      behavior: "allow", ...(updatedInput ? { updatedInput } : {}),
+    });
+
+    // Then OmO receives cancellation, never a value it did not offer.
+    expect(process.notify).toHaveBeenCalledWith({ type: "extension_ui_response", id: "select-empty", cancelled: true });
+  });
+
   it("registers both approval RPC handlers for entry wiring", () => {
     const contracts: string[] = [];
     const server = {

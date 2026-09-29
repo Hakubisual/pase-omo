@@ -756,11 +756,12 @@ export class OmoSession {
           : { type: "extension_ui_response", id: permissionId, cancelled: true },
       );
     } else if (pending.form && typeof cardAnswers === "object" && cardAnswers !== null && !Array.isArray(cardAnswers)) {
-      const answers: Record<string, { selected: string[]; text?: string }> = {};
-      for (const question of pending.form) {
+      const answers = Object.fromEntries(pending.form.flatMap((question) => {
         const value = cardAnswers[question.header];
-        if (typeof value === "string" && value.trim()) answers[question.id] = parseFormAnswer(value, question);
-      }
+        return typeof value === "string" && value.trim()
+          ? [[question.id, parseFormAnswer(value, question)]]
+          : [];
+      }));
       // OmO keeps a question open on an empty answer set, and this request is
       // already gone from the pending map, so an empty submission is a cancel.
       this.proc.notify(
@@ -771,7 +772,11 @@ export class OmoSession {
     } else {
       const label = response.selectedActionId ? pending.optionByAction.get(response.selectedActionId) : undefined;
       if (pending.method === "select") {
-        this.proc.notify({ type: "extension_ui_response", id: permissionId, value: label ?? "" });
+        this.proc.notify(
+          label !== undefined
+            ? { type: "extension_ui_response", id: permissionId, value: label }
+            : { type: "extension_ui_response", id: permissionId, cancelled: true },
+        );
       } else {
         const key = pending.questionKey ?? "answer";
         this.proc.notify({
