@@ -12,14 +12,16 @@ import { type OmoLaunch, modelConfigFingerprint, resolveOmoLaunch } from "./omo-
 import { OmoProcess } from "./omo-process.js";
 import {
   allThinkingOptions,
+  decodeModelId,
   describe,
   encodeModelId,
   OMO_MODES,
   OmoSession,
   type OmoModelRecord,
+  settledModels,
   toProviderModels,
 } from "./omo-session.js";
-import { readSessionHeaders, sameCwd, sessionsDir } from "./omo-store.js";
+import { agentDir, readSessionHeaders, sameCwd, sessionsDir } from "./omo-store.js";
 
 const CAPABILITIES = [
   "prompt.message",
@@ -40,6 +42,15 @@ function log(message: string): void {
   console.log(`[omo] ${message}`);
 }
 
+/** Remove a persisted model selection when OmO no longer advertises it. */
+export function sanitizeSessionModel(model: string | null | undefined, catalog: readonly OmoModelRecord[]): string | undefined {
+  if (!model) return undefined;
+  const parsed = decodeModelId(model);
+  return parsed && catalog.some((record) => record.provider === parsed.provider && record.id === parsed.modelId)
+    ? model
+    : undefined;
+}
+
 /**
  * Catalog discovery needs a live OmO; spawn a short-lived one and ask it.
  *
@@ -53,6 +64,12 @@ function log(message: string): void {
  * model: the model list is still the answer, and the caller falls back to the
  * first entry.
  */
+/** The OmO configuration a probe answers for: one cwd, one agent directory. */
+interface ProbeScope {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
 async function probeCatalog(
   launch: OmoLaunch,
   cwd: string,
@@ -72,7 +89,9 @@ async function probeCatalog(
   });
   proc.start();
   try {
-    const data = await proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 240_000);
+    const models = await settledModels(
+      async () => (await proc.call<{ models: OmoModelRecord[] }>("get_available_models", {}, 240_000)).models ?? [],
+    );
     let defaultModel: string | undefined;
     try {
       const state = await proc.call<{ model?: { provider?: unknown; id?: unknown } }>("get_state", {}, 240_000);
@@ -85,7 +104,7 @@ async function probeCatalog(
       // the first entry when OmO's own default cannot be read.
       log(`get_state during catalog probe failed: ${describe(error)}`);
     }
-    return { models: data.models ?? [], fingerprint, defaultModel };
+    return { models, fingerprint, defaultModel };
   } finally {
     proc.stop();
   }
@@ -121,11 +140,15 @@ export function createOmoProvider(): ProviderRegistration {
 function createOmoConnection(capabilities: readonly string[]): ProviderConnection {
   const listeners = new Set<(event: ProviderEvent) => void>();
   const sessions = new Map<string, OmoSession>();
+  /** The scope each live session was opened under, for its own configure calls. */
+  const sessionScopes = new Map<string, ProbeScope>();
   let catalog: OmoModelRecord[] | undefined;
   /** Model-config identity the cached `catalog` was discovered under. */
   let catalogFingerprint: string | undefined;
   /** OmO's own default from the same probe as `catalog`, encoded like a catalog id. */
   let catalogDefaultModel: string | undefined;
+  /** cwd and agent directory the cached `catalog` answers for. */
+  let catalogScope: ProbeScope | undefined;
   let closed = false;
 
   const emit = (event: ProviderEvent): void => {
@@ -137,20 +160,36 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
     emit({ type: "request.failed", requestId, error: { message: describe(error) } });
   };
 
+  /**
+   * The same OmO configuration: a probe run in one working directory against
+   * one agent directory answers for that pair only. A session may run with its
+   * own `cwd` and its own `OMO_CODING_AGENT_DIR`, so a catalog probed for the
+   * daemon's environment cannot speak for it - and a model missing from the
+   * wrong catalog must never be read as removed.
+   */
+  function sameScope(a: ProbeScope, b: ProbeScope): boolean {
+    return sameCwd(a.cwd, b.cwd) && sameCwd(agentDir(a.env), agentDir(b.env));
+  }
+
+  async function ensureCatalog(scope: ProbeScope): Promise<OmoModelRecord[]> {
+    const launch = resolveOmoLaunch(scope.env);
+    const fingerprint = await modelConfigFingerprint(scope.env);
+    if (!catalog || catalogFingerprint !== fingerprint || !catalogScope || !sameScope(catalogScope, scope)) {
+      const probed = await probeCatalog(launch, scope.cwd, fingerprint);
+      catalog = probed.models;
+      catalogFingerprint = probed.fingerprint;
+      catalogDefaultModel = probed.defaultModel;
+      catalogScope = scope;
+    }
+    return catalog;
+  }
+
   async function handleCatalog(input: Extract<ProviderInput, { type: "catalog" }>): Promise<void> {
-    const launch = resolveOmoLaunch();
     // Re-probe whenever the model config moved under us. Paseo may or may not
     // treat the changed cache key as a reason to ask again, so the provider
     // cannot rely on it: consulting the fingerprint here is what guarantees a
     // freshly started agent window lists the models OmO currently registers.
-    const fingerprint = await modelConfigFingerprint();
-    if (!catalog || catalogFingerprint !== fingerprint) {
-      const probed = await probeCatalog(launch, input.cwd ?? process.cwd(), fingerprint);
-      catalog = probed.models;
-      catalogFingerprint = probed.fingerprint;
-      catalogDefaultModel = probed.defaultModel;
-    }
-    const models = toProviderModels(catalog);
+    const models = toProviderModels(await ensureCatalog({ cwd: input.cwd ?? process.cwd(), env: process.env }));
     const defaultModel =
       catalogDefaultModel !== undefined && models.some((entry) => entry.id === catalogDefaultModel)
         ? catalogDefaultModel
@@ -187,7 +226,21 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
   }
 
   async function handleOpen(input: Extract<ProviderInput, { type: "session.open" }>): Promise<void> {
-    const launch = resolveOmoLaunch();
+    const launch = resolveOmoLaunch(input.config.env);
+    let config = input.config;
+    try {
+      // Probed under the session's own scope, so the catalog is the one OmO
+      // answers with for this session's cwd and agent directory.
+      const models = await ensureCatalog({ cwd: config.cwd, env: { ...process.env, ...config.env } });
+      const model = sanitizeSessionModel(config.model, models);
+      if (config.model && !model) {
+        log(`dropping stale model "${config.model}" for session ${input.sessionId}`);
+        const { model: _staleModel, ...withoutModel } = config;
+        config = withoutModel;
+      }
+    } catch (error) {
+      log(`catalog check skipped for ${input.sessionId}: ${describe(error)}`);
+    }
     const stored = input.persistence?.data;
     const sessionFile =
       typeof stored === "object" && stored !== null && typeof (stored as { sessionFile?: unknown }).sessionFile === "string"
@@ -197,7 +250,7 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
     const session = new OmoSession({
       paseoSessionId: input.sessionId,
       launch,
-      config: input.config,
+      config,
       capabilities,
       ...(sessionFile ? { sessionFile } : {}),
       emit,
@@ -207,6 +260,7 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
       },
     });
     sessions.set(input.sessionId, session);
+    sessionScopes.set(input.sessionId, { cwd: config.cwd, env: { ...process.env, ...config.env } });
     try {
       await session.open(input.requestId, input.history);
     } catch (error) {
@@ -281,7 +335,23 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
         return;
       case "session.configure":
         try {
-          await requireSession(input.sessionId).configure(input.changes);
+          let changes = input.changes;
+          if (changes.model) {
+            try {
+              // The session's own scope, not the daemon's: a model this session
+              // can reach may simply be absent from the daemon's catalog.
+              const scope = sessionScopes.get(input.sessionId) ?? { cwd: process.cwd(), env: process.env };
+              const models = await ensureCatalog(scope);
+              if (!sanitizeSessionModel(changes.model, models)) {
+                log(`ignoring stale model "${changes.model}" on configure`);
+                const { model: _staleModel, ...withoutModel } = changes;
+                changes = withoutModel;
+              }
+            } catch (error) {
+              log(`catalog check skipped on configure: ${describe(error)}`);
+            }
+          }
+          await requireSession(input.sessionId).configure(changes);
           emit({ type: "request.completed", requestId: input.requestId });
         } catch (error) {
           fail(input.requestId, error);
