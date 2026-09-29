@@ -2,6 +2,7 @@ import { mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProviderConnection, ProviderEvent } from "@getpaseo/plugin/server/provider";
 
 import { PROVIDER_ID } from "../../shared/ids.js";
 
@@ -10,7 +11,7 @@ import { PROVIDER_ID } from "../../shared/ids.js";
  * change in how the plugin decides a catalog is stale surfaces as a wrong
  * answer instead of as a call-count assertion.
  */
-const processes: Array<{ calls: number }> = [];
+const processes: Array<{ calls: number; args: string[]; cwd: string; env: Record<string, string> }> = [];
 
 /** Models the fake answers to `get_available_models`, consumed in order. */
 const queued: Array<{ models: Array<{ id: string; provider: string; name: string }> }> = [];
@@ -24,11 +25,15 @@ const queuedStates: Array<{ model?: { provider: string; id: string } }> = [];
 
 vi.mock("./omo-process.js", () => {
   class OmoProcess {
-    private readonly record = { calls: 0 };
+    private readonly record;
+    constructor(options: { args: string[]; cwd: string; env: Record<string, string> }) {
+      this.record = { calls: 0, ...options };
+    }
     start(): void {
       processes.push(this.record);
     }
     stop(): void {}
+<<<<<<< HEAD
     async call(command: string) {
       // Only model listing is a probe. get_state rides the same spawn and must
       // not change the call counts the freshness cases assert.
@@ -37,6 +42,7 @@ vi.mock("./omo-process.js", () => {
         return queued.shift() ?? { models: [] };
       }
       if (command === "get_state") return queuedStates.shift() ?? {};
+      if (command === "get_commands") return { commands: [] };
       throw new Error(`unexpected OmO command: ${command}`);
     }
   }
@@ -72,6 +78,29 @@ afterEach(() => {
   else process.env.PASEO_OMO_COMMAND = previousCommand;
 });
 
+/**
+ * Resolve on the next event matching `matches`, subscribed before the action
+ * that causes it. Bounded so a missing event fails the case instead of hanging.
+ */
+function nextEvent(
+  connection: ProviderConnection,
+  matches: (event: ProviderEvent) => boolean,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Provider event timed out"));
+    }, 10_000);
+    const unsubscribe = connection.onEvent((event) => {
+      if (!matches(event) && event.type !== "request.failed") return;
+      clearTimeout(timer);
+      unsubscribe();
+      if (event.type === "request.failed") reject(new Error(event.error.message));
+      else resolve();
+    });
+  });
+}
+
 /** Touch OmO's model config so the fingerprint moves. */
 async function rewriteModels(contents: string, secondsFromNow: number): Promise<void> {
   const path = join(agentDir, "models.json");
@@ -103,13 +132,12 @@ async function openConnection() {
     connection,
     catalogs,
     /** Request the catalog and wait for the matching answer. */
-    async request(): Promise<string[]> {
-      const before = catalogs.length;
+    async request(cwd: string = agentDir): Promise<string[]> {
       seq += 1;
-      await connection.send({ type: "catalog", requestId: `r${seq}`, cwd: agentDir });
-      await vi.waitFor(() => {
-        if (catalogs.length === before) throw new Error("catalog not answered yet");
-      });
+      const requestId = `r${seq}`;
+      const answered = nextEvent(connection, (event) => event.type === "catalog" && event.requestId === requestId);
+      await connection.send({ type: "catalog", requestId, cwd });
+      await answered;
       const answer = catalogs[catalogs.length - 1];
       if (!answer) throw new Error("catalog not answered yet");
       return answer.ids;
@@ -149,8 +177,25 @@ describe("OmO catalog freshness", () => {
     ]);
     await session.connection.close();
     // Both requests re-probed, and the first one was the only spawn before the edit.
-    // Each probe asks twice: once for the models, once to confirm the list settled.
-    expect(processes.map((entry) => entry.calls)).toEqual([2, 2]);
+    // Each probe re-asks until the answer holds still: the answer itself plus
+    // three replies that change nothing.
+    expect(processes.map((entry) => entry.calls)).toEqual([4, 4]);
+  });
+
+  it("probes again when the catalog is asked for another working directory", async () => {
+    await rewriteModels('{"providers":{}}', 0);
+    const otherCwd = await mkdtemp(join(tmpdir(), "omo-other-cwd-"));
+    const session = await openConnection();
+
+    queued.push({ models: [model("cliproxyapi", "gpt-6-luna")] });
+    expect(await session.request()).toEqual(["cliproxyapi/gpt-6-luna"]);
+
+    // OmO answers a probe from that directory's config, so the answer cannot be
+    // reused for a different one.
+    queued.push({ models: [model("cliproxyapi", "gpt-6-luna"), model("local-proxy", "gpt-5.6-sol")] });
+    expect(await session.request(otherCwd)).toEqual(["cliproxyapi/gpt-6-luna", "local-proxy/gpt-5.6-sol"]);
+    await session.connection.close();
+    expect(processes.filter((entry) => entry.calls > 0)).toHaveLength(2);
   });
 
   it("reuses the catalog while the model config is unchanged", async () => {
@@ -273,8 +318,8 @@ describe("OmO provider identity", () => {
   });
 });
 
-describe("stale OmO session models", () => {
-  it("drops a model the current catalog no longer advertises when opening a session", async () => {
+describe("OmO session catalog scope", () => {
+  it("drops a model the session's own catalog no longer advertises", async () => {
     const { sanitizeSessionModel } = await import("./provider.js");
     const catalog = [model("cliproxyapi-last", "gpt-6-luna")];
 
@@ -289,6 +334,7 @@ describe("stale OmO session models", () => {
     connection.onEvent((event) => {
       if (event.type === "session.config") openedConfigs.push(event.config);
     });
+    const opened = nextEvent(connection, (event) => event.type === "session.config");
     await connection.send({
       type: "session.open",
       requestId: "stale-model-open",
@@ -303,10 +349,51 @@ describe("stale OmO session models", () => {
         model: "local-proxy/gpt-5.6-sol",
       },
     });
-    await vi.waitFor(() => {
-      if (openedConfigs.length === 0) throw new Error("session config not emitted yet");
-    });
+    await opened;
     expect(openedConfigs[0]?.model).toBeUndefined();
+    await connection.close();
+  });
+
+  it("keeps a persisted model that is missing only from another scope's catalog", async () => {
+    const { createOmoProvider } = await import("./provider.js");
+    const sessionAgent = await mkdtemp(join(tmpdir(), "omo-session-agent-"));
+    const sessionCwd = await mkdtemp(join(tmpdir(), "omo-session-cwd-"));
+    // The daemon probes first and sees a catalog without the session's model.
+    queued.push({ models: [model("cliproxyapi", "gpt-6-luna")] });
+    const connection = await createOmoProvider().connect({ versions: [1], capabilities: [] });
+    const daemonCatalog = nextEvent(connection, (event) => event.type === "catalog");
+    await connection.send({ type: "catalog", requestId: "daemon-catalog", cwd: agentDir });
+    await daemonCatalog;
+    // The session runs against a different agent directory, where its own
+    // provider is registered but the daemon's catalog never saw it.
+    queued.push({
+      models: [model("cliproxyapi", "gpt-6-luna"), model("local-proxy", "gpt-5.6-sol")],
+    });
+    const openedConfigs: Array<{ model?: string }> = [];
+    connection.onEvent((event) => {
+      if (event.type === "session.config") openedConfigs.push(event.config);
+    });
+    const opened = nextEvent(connection, (event) => event.type === "session.config");
+    await connection.send({
+      type: "session.open",
+      requestId: "scoped-model-open",
+      sessionId: "scoped-model-session",
+      history: "skip",
+      config: {
+        cwd: sessionCwd,
+        env: { OMO_CODING_AGENT_DIR: sessionAgent },
+        mcpServers: {},
+        settings: {},
+        persist: false,
+        model: "local-proxy/gpt-5.6-sol",
+      },
+    });
+    await opened;
+    // Read under its own scope, so the model survives and reaches the CLI.
+    expect(openedConfigs[0]?.model).toBe("local-proxy/gpt-5.6-sol");
+    const child = processes.filter((entry) => entry.calls > 0).at(-1);
+    expect(child?.args).toContain("local-proxy");
+    expect(child?.cwd).toBe(sessionCwd);
     await connection.close();
   });
 });

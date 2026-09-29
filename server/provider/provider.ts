@@ -21,7 +21,7 @@ import {
   settledModels,
   toProviderModels,
 } from "./omo-session.js";
-import { readSessionHeaders, sameCwd, sessionsDir } from "./omo-store.js";
+import { agentDir, readSessionHeaders, sameCwd, sessionsDir } from "./omo-store.js";
 
 const CAPABILITIES = [
   "prompt.message",
@@ -64,6 +64,12 @@ export function sanitizeSessionModel(model: string | null | undefined, catalog: 
  * model: the model list is still the answer, and the caller falls back to the
  * first entry.
  */
+/** The OmO configuration a probe answers for: one cwd, one agent directory. */
+interface ProbeScope {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
 async function probeCatalog(
   launch: OmoLaunch,
   cwd: string,
@@ -134,11 +140,15 @@ export function createOmoProvider(): ProviderRegistration {
 function createOmoConnection(capabilities: readonly string[]): ProviderConnection {
   const listeners = new Set<(event: ProviderEvent) => void>();
   const sessions = new Map<string, OmoSession>();
+  /** The scope each live session was opened under, for its own configure calls. */
+  const sessionScopes = new Map<string, ProbeScope>();
   let catalog: OmoModelRecord[] | undefined;
   /** Model-config identity the cached `catalog` was discovered under. */
   let catalogFingerprint: string | undefined;
   /** OmO's own default from the same probe as `catalog`, encoded like a catalog id. */
   let catalogDefaultModel: string | undefined;
+  /** cwd and agent directory the cached `catalog` answers for. */
+  let catalogScope: ProbeScope | undefined;
   let closed = false;
 
   const emit = (event: ProviderEvent): void => {
@@ -150,14 +160,26 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
     emit({ type: "request.failed", requestId, error: { message: describe(error) } });
   };
 
-  async function ensureCatalog(cwd: string): Promise<OmoModelRecord[]> {
-    const launch = resolveOmoLaunch();
-    const fingerprint = await modelConfigFingerprint();
-    if (!catalog || catalogFingerprint !== fingerprint) {
-      const probed = await probeCatalog(launch, cwd, fingerprint);
+  /**
+   * The same OmO configuration: a probe run in one working directory against
+   * one agent directory answers for that pair only. A session may run with its
+   * own `cwd` and its own `OMO_CODING_AGENT_DIR`, so a catalog probed for the
+   * daemon's environment cannot speak for it - and a model missing from the
+   * wrong catalog must never be read as removed.
+   */
+  function sameScope(a: ProbeScope, b: ProbeScope): boolean {
+    return sameCwd(a.cwd, b.cwd) && sameCwd(agentDir(a.env), agentDir(b.env));
+  }
+
+  async function ensureCatalog(scope: ProbeScope): Promise<OmoModelRecord[]> {
+    const launch = resolveOmoLaunch(scope.env);
+    const fingerprint = await modelConfigFingerprint(scope.env);
+    if (!catalog || catalogFingerprint !== fingerprint || !catalogScope || !sameScope(catalogScope, scope)) {
+      const probed = await probeCatalog(launch, scope.cwd, fingerprint);
       catalog = probed.models;
       catalogFingerprint = probed.fingerprint;
       catalogDefaultModel = probed.defaultModel;
+      catalogScope = scope;
     }
     return catalog;
   }
@@ -167,7 +189,7 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
     // treat the changed cache key as a reason to ask again, so the provider
     // cannot rely on it: consulting the fingerprint here is what guarantees a
     // freshly started agent window lists the models OmO currently registers.
-    const models = toProviderModels(await ensureCatalog(input.cwd ?? process.cwd()));
+    const models = toProviderModels(await ensureCatalog({ cwd: input.cwd ?? process.cwd(), env: process.env }));
     const defaultModel =
       catalogDefaultModel !== undefined && models.some((entry) => entry.id === catalogDefaultModel)
         ? catalogDefaultModel
@@ -204,10 +226,12 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
   }
 
   async function handleOpen(input: Extract<ProviderInput, { type: "session.open" }>): Promise<void> {
-    const launch = resolveOmoLaunch();
+    const launch = resolveOmoLaunch(input.config.env);
     let config = input.config;
     try {
-      const models = await ensureCatalog(config.cwd);
+      // Probed under the session's own scope, so the catalog is the one OmO
+      // answers with for this session's cwd and agent directory.
+      const models = await ensureCatalog({ cwd: config.cwd, env: { ...process.env, ...config.env } });
       const model = sanitizeSessionModel(config.model, models);
       if (config.model && !model) {
         log(`dropping stale model "${config.model}" for session ${input.sessionId}`);
@@ -236,6 +260,7 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
       },
     });
     sessions.set(input.sessionId, session);
+    sessionScopes.set(input.sessionId, { cwd: config.cwd, env: { ...process.env, ...config.env } });
     try {
       await session.open(input.requestId, input.history);
     } catch (error) {
@@ -313,7 +338,10 @@ function createOmoConnection(capabilities: readonly string[]): ProviderConnectio
           let changes = input.changes;
           if (changes.model) {
             try {
-              const models = await ensureCatalog(process.cwd());
+              // The session's own scope, not the daemon's: a model this session
+              // can reach may simply be absent from the daemon's catalog.
+              const scope = sessionScopes.get(input.sessionId) ?? { cwd: process.cwd(), env: process.env };
+              const models = await ensureCatalog(scope);
               if (!sanitizeSessionModel(changes.model, models)) {
                 log(`ignoring stale model "${changes.model}" on configure`);
                 const { model: _staleModel, ...withoutModel } = changes;

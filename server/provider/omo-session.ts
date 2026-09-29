@@ -120,30 +120,54 @@ export function allThinkingOptions(models: readonly ProviderModel[]): ProviderTh
 }
 
 /**
- * Ask OmO for its models until the list stops growing.
+ * Ask OmO for its models until the list holds still.
  *
  * Extensions such as the CPA plugin register their providers asynchronously,
  * a few hundred milliseconds after the RPC channel answers. The first
  * `get_available_models` reply can therefore carry only the static models.json
  * entries (measured: 3 models, then 103 a quarter second later), and caching
  * that first answer is what left new agents with an almost empty model picker.
- * Re-asking until two consecutive answers are no larger waits exactly as long
- * as the registration takes, and never shrinks a list it has already seen.
+ *
+ * The answer is trusted only after it has stopped changing for
+ * `stablePolls` consecutive replies, and the result is the union of every
+ * reply seen. Both halves matter: a registration that lands after an
+ * earlier answer of the same size is still caught because only the change
+ * matters, not the size, and a reply that momentarily drops a provider cannot
+ * shrink the answer or end the wait early. A late registration that never
+ * lands inside the window is still bounded by `maxAttempts` so a probe cannot
+ * hang forever.
  */
 export async function settledModels(
   fetchModels: () => Promise<OmoModelRecord[]>,
-  options: { intervalMs?: number; maxAttempts?: number } = {},
+  options: { intervalMs?: number; stablePolls?: number; maxAttempts?: number } = {},
 ): Promise<OmoModelRecord[]> {
   const intervalMs = options.intervalMs ?? 250;
-  const maxAttempts = options.maxAttempts ?? 20;
-  let models = await fetchModels();
-  for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+  const stablePolls = options.stablePolls ?? 3;
+  const maxAttempts = options.maxAttempts ?? 24;
+  const seen = new Map<string, OmoModelRecord>();
+  let signature = "";
+  let unchanged = 0;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const next = await fetchModels();
-    if (next.length <= models.length) return models;
-    models = next;
+    let grew = false;
+    for (const record of next) {
+      const key = encodeModelId(record);
+      if (!seen.has(key)) {
+        seen.set(key, record);
+        grew = true;
+      }
+    }
+    const nextSignature = [...seen.keys()].sort().join("\n");
+    if (grew || nextSignature !== signature) {
+      signature = nextSignature;
+      unchanged = 0;
+    } else {
+      unchanged += 1;
+    }
+    if (unchanged >= stablePolls) break;
+    if (attempt < maxAttempts - 1) await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
   }
-  return models;
+  return [...seen.values()];
 }
 
 /**
