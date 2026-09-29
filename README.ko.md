@@ -11,7 +11,7 @@
 
 </div>
 
-![OmO 보드의 워크플로우 실행: 7개 웨이브, 15개 노드 중 8개 완료·3개 실행 중](docs/images/board.png)
+![OmO 보드가 열린 Paseo: 7개 웨이브·15개 노드 워크플로우, 실행 중인 노드 3개, 노드 상세와 활동 기록](docs/images/demo.png)
 
 ---
 
@@ -33,8 +33,6 @@ OmO 5에서 호스트와 대화하는 방식이 바뀌었고, 이 플러그인�
 `workflow` 실행은 보드로 열린다. 웨이브마다 한 열, 노드마다 카드 한 장, 그리고 왼쪽에서
 오른쪽으로 작업을 나르는 엣지.
 
-![실행 중인 노드로 들어가는 엣지를 따라 점이 흐르는 모습](docs/images/board-flow.gif)
-
 - **지금 도는 걸 따라간다.** 보드는 지금 실행 중인 세션을 골라 그 세션의 실행 하나만
   보여준다. 세션 목록과 통계 바는 비켜 있고, 필요하면 *Other sessions*로 연다.
 - **움직임은 일이 일어나는 곳에만.** 실행 중인 노드로 들어가는 엣지에 점이 흐른다.
@@ -45,57 +43,21 @@ OmO 5에서 호스트와 대화하는 방식이 바뀌었고, 이 플러그인�
   전체가 얼마나 진행됐는지 보여준다.
 
 노드를 누르면 상세가 열린다 — 턴 수, 도구 호출 수, 모델, 무엇을 하라고 받았는지,
-지금 뭘 하는지:
-
-![보드 아래 열린 노드 인스펙터](docs/images/board-inspector.png)
+지금 뭘 하는지.
 
 서브태스크는 보드 옆 작은 서랍에 들어가서 그래프를 밀어내지 않는다. **Subtasks** 버튼으로
-열고 닫고, 실행 중인 작업이 위로 온다:
-
-![보드 옆에 열린 서브태스크 서랍](docs/images/board-subtasks.png)
+열고 닫고, 실행 중인 작업이 위로 온다.
 
 보드 아래 활동 기록에는 시작, 완료, 오류, 실시간 진행이 최신순으로 쌓인다. 한 줄을
 누르면 그 노드로 이동한다.
 
 이전 카드 뷰는 **Cards**에서 그대로 볼 수 있다.
 
-## 채팅에서
+## 채팅과 폰에서
 
-OmO 질문은 Paseo 기본 질문 카드로 온다:
-
-<img src="docs/images/chat-question.png" width="720" alt="오프닝 루프를 묻는 Paseo 질문 카드, 선택지 두 개">
-
-체크리스트를 따라 일한 턴은 투두 카드 한 장으로 끝난다:
-
-<img src="docs/images/chat-todo.png" width="720" alt="턴 끝의 투두 카드 한 장: 두 개 완료, 하나 진행 중">
-
-## 폰에서
-
-폰에서도 같은 보드다 — 같은 카드, 같은 흐름. 글자를 줄이는 대신 옆으로 스크롤한다.
-서브태스크 서랍은 공간이 있는 그래프 아래로 내려간다.
-
-<table>
-<tr>
-<td width="33%"><img src="docs/images/mobile-board.png" alt="폰에서 본 보드"></td>
-<td width="33%"><img src="docs/images/mobile-running.png" alt="폰에서 본 실행 중인 웨이브"></td>
-<td width="33%"><img src="docs/images/mobile-inspector.png" alt="폰에서 본 노드 인스펙터"></td>
-</tr>
-<tr>
-<td align="center"><sub>보드</sub></td>
-<td align="center"><sub>실행 중인 웨이브</sub></td>
-<td align="center"><sub>노드 상세</sub></td>
-</tr>
-<tr>
-<td width="33%"><img src="docs/images/mobile-subtasks.png" alt="폰에서 본 서브태스크 서랍"></td>
-<td width="33%"><img src="docs/images/mobile-question.png" alt="폰에서 본 OmO 질문"></td>
-<td width="33%"><img src="docs/images/mobile-todo.png" alt="폰에서 본 투두 카드"></td>
-</tr>
-<tr>
-<td align="center"><sub>서브태스크</sub></td>
-<td align="center"><sub>질문 카드</sub></td>
-<td align="center"><sub>투두 카드</sub></td>
-</tr>
-</table>
+OmO 질문은 Paseo 기본 질문 카드로 오고, 체크리스트를 따라 일한 턴은 투두 카드 한 장으로
+끝난다. 폰에서도 같은 보드다 — 같은 카드, 같은 흐름. 글자를 줄이는 대신 옆으로 스크롤하고,
+서브태스크 서랍은 그래프 아래로 내려간다.
 
 ## 그 밖의 기능
 
