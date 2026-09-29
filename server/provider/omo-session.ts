@@ -145,6 +145,73 @@ export function withQuestionCapability(existing: string | undefined): string {
     : [...advertised, "question"].join(",");
 }
 
+/** One OmO question as Paseo's question card answers it: keyed by `header`. */
+export interface FormQuestion {
+  id: string;
+  header: string;
+  labels: string[];
+  multiSelect: boolean;
+}
+
+/**
+ * Paseo draws a `kind: "question"` permission with its own question card, built
+ * from `request.input.questions` in Claude's AskUserQuestion shape, and ignores
+ * `actions` for that kind. Without this input the card had nothing to show and
+ * no way to answer. The card keys answers by header, so headers are made unique.
+ */
+export function questionForm(questions: readonly Json[], allowOther = true) {
+  const seen = new Set<string>();
+  const form: FormQuestion[] = [];
+  const cards = questions.map((q, index) => {
+    const base = typeof q.header === "string" && q.header.trim() ? q.header.trim() : `Question ${index + 1}`;
+    let header = base;
+    for (let n = 2; seen.has(header); n++) header = `${base} (${n})`;
+    seen.add(header);
+    const options = (Array.isArray(q.options) ? q.options : []).flatMap((option) => {
+      if (typeof option !== "object" || option === null) return [];
+      const { label, description } = option as Json;
+      if (typeof label !== "string") return [];
+      return [typeof description === "string" ? { label, description } : { label }];
+    });
+    const multiSelect = q.multiSelect === true;
+    form.push({
+      id: typeof q.id === "string" ? q.id : "answer",
+      header,
+      labels: options.map((option) => option.label),
+      multiSelect,
+    });
+    return { question: String(q.question ?? header), header, options, multiSelect, allowOther };
+  });
+  return { input: { questions: cards }, form };
+}
+
+/**
+ * One answer from Paseo's question card in OmO's shape. The card sends a single
+ * string per question: the chosen label or the typed text, or for multi-select
+ * the chosen labels followed by any typed text, joined by ", ".
+ */
+export function parseFormAnswer(value: string, question: FormQuestion): { selected: string[]; text?: string } {
+  if (question.labels.includes(value)) return { selected: [value] };
+  if (!question.multiSelect) return { selected: [], text: value };
+  const parts = value.split(", ");
+  const selected: string[] = [];
+  let start = 0;
+  scan: while (start < parts.length) {
+    // Longest match first, so a label that itself contains ", " stays whole.
+    for (let end = parts.length; end > start; end--) {
+      const label = parts.slice(start, end).join(", ");
+      if (question.labels.includes(label)) {
+        selected.push(label);
+        start = end;
+        continue scan;
+      }
+    }
+    break;
+  }
+  const text = parts.slice(start).join(", ");
+  return text ? { selected, text } : { selected };
+}
+
 interface PendingUi {
   method: "confirm" | "select" | "question";
   title: string;
@@ -152,6 +219,8 @@ interface PendingUi {
   optionByAction: Map<string, string>;
   /** Question key used by `extension_ui_response.answers`. */
   questionKey?: string;
+  /** Every question of a question request, as Paseo's question card answers them. */
+  form?: FormQuestion[];
 }
 
 export interface OmoSessionOptions {
@@ -665,14 +734,49 @@ export class OmoSession {
     const pending = this.pendingUi.get(permissionId);
     this.pendingUi.delete(permissionId);
     if (!pending) return;
+    const cardAnswers = response.behavior === "allow" ? response.updatedInput?.answers : undefined;
     if (response.behavior === "deny") {
       this.proc.notify({ type: "extension_ui_response", id: permissionId, cancelled: true });
     } else if (pending.method === "confirm") {
       this.proc.notify({ type: "extension_ui_response", id: permissionId, confirmed: true });
+    } else if (
+      pending.method === "select" &&
+      pending.form &&
+      typeof cardAnswers === "object" &&
+      cardAnswers !== null &&
+      !Array.isArray(cardAnswers)
+    ) {
+      // A selection has exactly one card question and must resolve to one of its
+      // labels; anything else would hand OmO a value it never offered.
+      const [choice] = pending.form;
+      const value = choice ? cardAnswers[choice.header] : undefined;
+      this.proc.notify(
+        typeof value === "string" && choice?.labels.includes(value)
+          ? { type: "extension_ui_response", id: permissionId, value }
+          : { type: "extension_ui_response", id: permissionId, cancelled: true },
+      );
+    } else if (pending.form && typeof cardAnswers === "object" && cardAnswers !== null && !Array.isArray(cardAnswers)) {
+      const answers = Object.fromEntries(pending.form.flatMap((question) => {
+        const value = cardAnswers[question.header];
+        return typeof value === "string" && value.trim()
+          ? [[question.id, parseFormAnswer(value, question)]]
+          : [];
+      }));
+      // OmO keeps a question open on an empty answer set, and this request is
+      // already gone from the pending map, so an empty submission is a cancel.
+      this.proc.notify(
+        Object.keys(answers).length > 0
+          ? { type: "extension_ui_response", id: permissionId, answers }
+          : { type: "extension_ui_response", id: permissionId, cancelled: true },
+      );
     } else {
       const label = response.selectedActionId ? pending.optionByAction.get(response.selectedActionId) : undefined;
       if (pending.method === "select") {
-        this.proc.notify({ type: "extension_ui_response", id: permissionId, value: label ?? "" });
+        this.proc.notify(
+          label !== undefined
+            ? { type: "extension_ui_response", id: permissionId, value: label }
+            : { type: "extension_ui_response", id: permissionId, cancelled: true },
+        );
       } else {
         const key = pending.questionKey ?? "answer";
         this.proc.notify({
@@ -1024,7 +1128,13 @@ export class OmoSession {
         return { id: actionId, label, behavior: "allow" as const };
       });
       const title = String(event.title ?? "OmO needs a choice");
-      this.pendingUi.set(id, { method: "select", title, optionByAction });
+      // Same native question card as `question`, as one single-select question
+      // with every option and no free text: OmO only accepts a listed value.
+      const { input, form } = questionForm(
+        [{ header: "Choice", question: title, options: options.map((label) => ({ label })), multiSelect: false }],
+        false,
+      );
+      this.pendingUi.set(id, { method: "select", title, optionByAction, form });
       this.emit({
         type: "session.permission",
         sessionId: this.sessionId,
@@ -1033,14 +1143,17 @@ export class OmoSession {
           name: "select",
           kind: "question",
           title,
+          input,
           actions: [...actions, { id: "deny", label: "Cancel", behavior: "deny" as const }],
         },
       });
       return;
     }
     if (method === "question") {
-      const questions = Array.isArray(event.questions) ? event.questions : [];
-      const first = questions.find((q): q is Json => typeof q === "object" && q !== null);
+      const questions = (Array.isArray(event.questions) ? event.questions : []).filter(
+        (q): q is Json => typeof q === "object" && q !== null,
+      );
+      const first = questions[0];
       if (!first) {
         this.proc.notify({ type: "extension_ui_response", id, cancelled: true });
         return;
@@ -1056,11 +1169,13 @@ export class OmoSession {
         return [{ id: actionId, label, behavior: "allow" as const }];
       });
       const title = String(first.question ?? first.header ?? "OmO has a question");
+      const { input, form } = questionForm(questions);
       this.pendingUi.set(id, {
         method: "question",
         title,
         optionByAction,
         ...(typeof first.id === "string" ? { questionKey: first.id } : {}),
+        form,
       });
       this.emit({
         type: "session.permission",
@@ -1071,6 +1186,7 @@ export class OmoSession {
           kind: "question",
           title: String(first.header ?? "OmO has a question"),
           description: String(first.question ?? ""),
+          input,
           actions: [...actions, { id: "deny", label: "Skip", behavior: "deny" as const }],
         },
       });

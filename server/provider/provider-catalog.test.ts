@@ -12,8 +12,15 @@ import { PROVIDER_ID } from "../../shared/ids.js";
  */
 const processes: Array<{ calls: number }> = [];
 
-/** What the fake `omo --mode rpc` answers, consumed in order. */
+/** Models the fake answers to `get_available_models`, consumed in order. */
 const queued: Array<{ models: Array<{ id: string; provider: string; name: string }> }> = [];
+
+/**
+ * States the fake answers to `get_state`, consumed in order. An empty queue
+ * means OmO named no model. This call rides the same spawn as the model list
+ * and is not counted as a probe.
+ */
+const queuedStates: Array<{ model?: { provider: string; id: string } }> = [];
 
 vi.mock("./omo-process.js", () => {
   class OmoProcess {
@@ -22,9 +29,15 @@ vi.mock("./omo-process.js", () => {
       processes.push(this.record);
     }
     stop(): void {}
-    async call(): Promise<{ models: Array<{ id: string; provider: string; name: string }> }> {
-      this.record.calls += 1;
-      return queued.shift() ?? { models: [] };
+    async call(command: string) {
+      // Only model listing is a probe. get_state rides the same spawn and must
+      // not change the call counts the freshness cases assert.
+      if (command === "get_available_models") {
+        this.record.calls += 1;
+        return queued.shift() ?? { models: [] };
+      }
+      if (command === "get_state") return queuedStates.shift() ?? {};
+      throw new Error(`unexpected OmO command: ${command}`);
     }
   }
   return { OmoProcess };
@@ -40,6 +53,7 @@ beforeEach(async () => {
   vi.resetModules();
   processes.length = 0;
   queued.length = 0;
+  queuedStates.length = 0;
   agentDir = await mkdtemp(join(tmpdir(), "omo-catalog-"));
   previousAgentDir = process.env.OMO_CODING_AGENT_DIR;
   process.env.OMO_CODING_AGENT_DIR = agentDir;
@@ -76,9 +90,13 @@ async function rewriteModels(contents: string, secondsFromNow: number): Promise<
 async function openConnection() {
   const { createOmoProvider } = await import("./provider.js");
   const connection = await createOmoProvider().connect({ versions: [1], capabilities: [] });
-  const catalogs: string[][] = [];
+  const catalogs: Array<{ ids: string[]; defaultModel: string | undefined }> = [];
   connection.onEvent((event) => {
-    if (event.type === "catalog") catalogs.push(event.catalog.models.map((entry) => entry.id));
+    if (event.type !== "catalog") return;
+    catalogs.push({
+      ids: event.catalog.models.map((entry) => entry.id),
+      defaultModel: event.catalog.defaultModel,
+    });
   });
   let seq = 0;
   return {
@@ -92,7 +110,13 @@ async function openConnection() {
       await vi.waitFor(() => {
         if (catalogs.length === before) throw new Error("catalog not answered yet");
       });
-      return catalogs[catalogs.length - 1] as string[];
+      const answer = catalogs[catalogs.length - 1];
+      if (!answer) throw new Error("catalog not answered yet");
+      return answer.ids;
+    },
+    /** Default model advertised with the catalog answer just received. */
+    defaultModel(): string | undefined {
+      return catalogs[catalogs.length - 1]?.defaultModel;
     },
   };
 }
@@ -166,6 +190,59 @@ describe("OmO catalog freshness", () => {
     expect(after).not.toBe(before);
     expect(String(before)).toContain("omo.jsonc:");
     expect(String(before)).not.toContain("omo.jsonc:ENOENT");
+  });
+});
+
+describe("OmO catalog default", () => {
+  it("advertises the model get_state names when it is not listed first", async () => {
+    await rewriteModels('{"providers":{}}', 0);
+    queued.push({
+      models: [
+        model("baseten", "deepseek-ai/DeepSeek-V4-Flash-0731"),
+        model("anthropic-subscription", "claude-opus-5-5"),
+      ],
+    });
+    // OmO lists every model it knows, so list order is not its default. A new
+    // agent should start on the model get_state is already running.
+    queuedStates.push({ model: { provider: "anthropic-subscription", id: "claude-opus-5-5" } });
+
+    const session = await openConnection();
+    expect(await session.request()).toEqual([
+      "baseten/deepseek-ai/DeepSeek-V4-Flash-0731",
+      "anthropic-subscription/claude-opus-5-5",
+    ]);
+    expect(session.defaultModel()).toBe("anthropic-subscription/claude-opus-5-5");
+    await session.connection.close();
+  });
+
+  it("falls back to the first model when get_state names none or one absent from the catalog", async () => {
+    await rewriteModels('{"providers":{}}', 0);
+    const models = [
+      model("baseten", "deepseek-ai/DeepSeek-V4-Flash-0731"),
+      model("anthropic-subscription", "claude-opus-5-5"),
+    ];
+    const ids = [
+      "baseten/deepseek-ai/DeepSeek-V4-Flash-0731",
+      "anthropic-subscription/claude-opus-5-5",
+    ];
+
+    // No model is not a failed probe. The first entry is the default Paseo
+    // advertised before OmO's own default was consulted.
+    queued.push({ models });
+    queuedStates.push({});
+    const none = await openConnection();
+    expect(await none.request()).toEqual(ids);
+    expect(none.defaultModel()).toBe("baseten/deepseek-ai/DeepSeek-V4-Flash-0731");
+    await none.connection.close();
+
+    // A default OmO names but does not list cannot be selected, so the same
+    // fallback applies.
+    queued.push({ models });
+    queuedStates.push({ model: { provider: "missing", id: "not-in-catalog" } });
+    const absent = await openConnection();
+    expect(await absent.request()).toEqual(ids);
+    expect(absent.defaultModel()).toBe("baseten/deepseek-ai/DeepSeek-V4-Flash-0731");
+    await absent.connection.close();
   });
 });
 

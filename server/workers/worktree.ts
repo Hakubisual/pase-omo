@@ -22,6 +22,11 @@ export interface CreateWorktreeOptions {
   baseRef?: string | undefined;
 }
 
+function canonicalWorktreePath(worktreePath: string): string {
+  const resolved = path.resolve(worktreePath);
+  return fs.existsSync(resolved) ? fs.realpathSync.native(resolved) : resolved;
+}
+
 export async function execGit(
   args: readonly string[],
   cwd?: string,
@@ -135,13 +140,14 @@ export async function createWorkerWorktree(
   // Check if worktree directory already exists in git worktree list
   const existingWorktrees = await listWorktrees(repoRoot);
   const matched = existingWorktrees.find(
-    (wt) => path.resolve(wt.path).toLowerCase() === targetPath.toLowerCase(),
+    (wt) => canonicalWorktreePath(wt.path).toLowerCase() === canonicalWorktreePath(targetPath).toLowerCase(),
   );
 
   if (matched) {
-    // Worktree is already active, return existing
+    // Worktree is already active. Return the requested path rather than git's
+    // canonical spelling so both calls for one worker agree.
     return {
-      path: matched.path,
+      path: targetPath,
       branch: matched.branch || branch,
     };
   }

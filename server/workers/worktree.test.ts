@@ -38,7 +38,7 @@ describe("Git worktree manager", () => {
 
   it("ensures a directory is a valid git repository", async () => {
     const { repoRoot } = await ensureGitRepository(repoDir);
-    expect(repoRoot.toLowerCase()).toBe(path.resolve(repoDir).toLowerCase());
+    expect(repoRoot.toLowerCase()).toBe(fs.realpathSync.native(repoDir).toLowerCase());
   });
 
   it("explicitly rejects non-git repositories with clear error", async () => {
@@ -82,10 +82,25 @@ describe("Git worktree manager", () => {
 
     const worktrees = await listWorktrees(repoDir);
     const found = worktrees.find(
-      (wt) => path.resolve(wt.path).toLowerCase() === path.resolve(targetPath).toLowerCase(),
+      (wt) => fs.realpathSync.native(wt.path).toLowerCase() === fs.realpathSync.native(targetPath).toLowerCase(),
     );
     expect(found).toBeDefined();
     expect(found?.branch).toBe("omo/worker-alpha");
+  });
+
+  it("reuses a worktree through a symlinked parent", async () => {
+    // Given a registered worktree and a second spelling through a directory link.
+    const targetPath = path.join(tempDir, "worker-linked");
+    await createWorkerWorktree({ repoRoot: repoDir, targetPath, branch: "omo/linked" });
+    const linkedParent = path.join(tempDir, "alias");
+    fs.symlinkSync(tempDir, linkedParent, process.platform === "win32" ? "junction" : "dir");
+    const requestedPath = path.join(linkedParent, "worker-linked");
+
+    // When the same worktree is requested through the link.
+    const result = await createWorkerWorktree({ repoRoot: repoDir, targetPath: requestedPath, branch: "omo/linked" });
+
+    // Then it is reused and the caller keeps its requested spelling.
+    expect(result).toEqual({ path: requestedPath, branch: "omo/linked" });
   });
 
   it("re-uses existing active worktree without deleting or failing", async () => {
