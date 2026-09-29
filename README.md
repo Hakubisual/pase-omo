@@ -2,131 +2,143 @@
 
 # pase-omo
 
-**[OmO](https://github.com/code-yeongyu) — inside [Paseo](https://getpaseo.com).**
+**[OmO 5](https://github.com/code-yeongyu), running natively inside [Paseo](https://getpaseo.com).**
 
-Workflow DAGs you can read. Todo lists that tick off live.
-Questions you can actually answer. On desktop and on your phone.
+Watch a workflow run wave by wave, answer OmO in Paseo's own question card,
+and keep one clean todo card per turn — on your desktop and on your phone.
 
 [English](README.md) · [한국어](README.ko.md)
 
 </div>
 
-![OmO running a nine-node workflow DAG in Paseo](docs/images/hero.png)
+![A workflow run on the OmO board: fifteen nodes in seven waves, eight settled and three running](docs/images/board.png)
 
 ---
 
-## What you get
+## What's new: OmO 5 native
 
-### OmO as an agent provider
+OmO 5 changed how it talks to its hosts, and this plugin now speaks it directly:
 
-Once installed, OmO shows up in Paseo's model picker like any other agent.
-Sessions, streaming, tool calls and child agents all run through Paseo's own chat.
+- **OmO 5 is the engine.** Sessions open on OmO's own default model, the model
+  picker lists every model OmO registers, and child sessions started by `task()`
+  show up as real Paseo sessions.
+- **Questions go through Paseo's native card.** When OmO asks something, Paseo
+  draws its own question card in the chat. Pick an option, type an answer, or
+  answer several questions at once — the answer goes straight back to OmO.
+  The plugin's separate approval button is gone; the chat is the place to answer.
+- **One todo card per turn.** OmO's todo tool no longer stacks a row in the
+  chat for every tick. You get one card when the turn ends, and the composer's
+  task chip shows progress while it runs.
+- **A new board view for workflow runs** — below.
 
-### Workflow DAGs, drawn as graphs
+## The workflow board
 
-Every `workflow` run becomes a real dependency graph in the chat timeline. Arrows
-turn green as upstream nodes finish, and the run keeps one card instead of
-stacking a new one on every state change.
+Every `workflow` run opens as a board: one column per wave, a card per node,
+and edges that carry the work from left to right.
 
-<img src="docs/images/dag-graph.png" width="800" alt="A workflow DAG: nine nodes across four layers, three done, two running, one blocked and three pending">
+![Dots flowing along the edges into the nodes that are running](docs/images/board-flow.gif)
 
-<img src="docs/images/chat-dag-card.png" width="700" alt="DAG card in the chat timeline">
+- **It follows what is running.** The board picks the session that is running
+  right now and shows its one live run. The session list and the stats bar stay
+  out of the way; *Other sessions* opens them when you need them.
+- **Motion only where work is happening.** Edges into a running node carry
+  moving dots. Finished edges turn solid green, pending ones stay grey, and the
+  animation stops when nothing runs.
+- **Every card says what the node is doing:** state, elapsed time and tokens per
+  second, the category and model that ran it, and its live progress line.
+- **Waves count themselves** — `Wave 4 · 0/2 settled · 2 running` — and the run
+  header shows how far along the whole run is.
 
-The same run opens in a side panel with every session under the project, run and
-task counts, and an inspector: tap any node for its description, the agent and
-model that ran it, turn and tool-call counts, elapsed time and the linked task id.
+Tap a node for its details — turns, tool calls, the model, what it was asked
+to do and what it is doing now:
 
-<img src="docs/images/node-detail.png" width="800" alt="OmO DAG panel with the node detail inspector open">
+![The node inspector open under the board](docs/images/board-inspector.png)
 
-### Todo cards that tick off live
+Subtasks live in a small drawer beside the board, so they never push the graph
+off screen. Open it with the **Subtasks** button; running work sorts to the top:
 
-The plugin replaces Paseo's built-in todo row with a card that updates in place
-while the turn is still streaming — you watch the checklist fill instead of
-re-reading a wall of text.
+![The subtask drawer open beside the board](docs/images/board-subtasks.png)
 
-<img src="docs/images/todo-live.png" width="820" alt="Todo card while the turn is running">
+The activity log under the board lists every start, finish, error and live
+progress line, newest first. Tap a line to jump to its node.
 
-<img src="docs/images/todo-done.png" width="820" alt="Todo card once every item is done">
+The previous card view is still one click away under **Cards**.
 
-### Approvals, questions and choices
+## In the chat
 
-When OmO needs a confirmation, a pick from a list, or a free-text answer, it
-arrives as a popup with the suggested answers as buttons — plus a `Needs reply`
-pill in the composer so you never miss one while scrolled away.
+OmO's questions arrive as Paseo's native question card:
 
-<img src="docs/images/approval.png" width="760" alt="OmO question popup with suggested answers">
+<img src="docs/images/chat-question.png" width="720" alt="Paseo's question card asking which loop opens the set, with two options">
 
-### Composer pills
+And a turn that worked through a checklist ends with a single todo card:
 
-The composer is the one surface that is always on screen, so that is where the
-pills live. The DAG pill opens the running graph in a popover; the approvals pill
-opens any pending request.
+<img src="docs/images/chat-todo.png" width="720" alt="One todo card at the end of a turn: two items done, one in progress">
 
-<img src="docs/images/pill.png" width="560" alt="DAG popover opened from the composer pill">
+## On your phone
 
-### Panels
-
-| Panel | What it shows |
-| --- | --- |
-| **OmO DAG** | Every session under a project path, run and task counts, and the full graph for the selected run |
-| **OmO Approvals** | Pending confirmations, choices and questions for the current agent |
-| **OmO Folders** | Sessions, runs and tasks grouped into a browsable tree |
-
-All three open from the command center or the workspace tab bar.
-
-### Built for a phone too
-
-Every surface answers to one readability contract instead of degrading into a
-flat list on a narrow screen. The graph turns on its side, shrinks only as far as
-a readability floor and then scrolls, type stops shrinking at a floor of its own,
-and a node too short for two lines drops the state word rather than clipping its
-label.
+The board is the same board on a phone — same cards, same flow — and it scrolls
+sideways instead of shrinking the type. The subtask drawer drops below the
+graph, where there is room for it.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/mobile-dag-card.png" width="300" alt="DAG card on a phone"></td>
-<td width="50%"><img src="docs/images/mobile-dag-sheet.png" width="300" alt="DAG pill sheet on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-board.png" alt="The board on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-running.png" alt="The running waves on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-inspector.png" alt="The node inspector on a phone"></td>
 </tr>
 <tr>
-<td align="center"><sub>Chat DAG card</sub></td>
-<td align="center"><sub>DAG pill sheet</sub></td>
+<td align="center"><sub>Board</sub></td>
+<td align="center"><sub>Running waves</sub></td>
+<td align="center"><sub>Node details</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/images/mobile-approval.png" width="300" alt="Approvals sheet on a phone"></td>
-<td width="50%"><img src="docs/images/mobile-todo.png" width="300" alt="Todo card on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-subtasks.png" alt="The subtask drawer on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-question.png" alt="An OmO question on a phone"></td>
+<td width="33%"><img src="docs/images/mobile-todo.png" alt="The todo card on a phone"></td>
 </tr>
 <tr>
-<td align="center"><sub>Approvals sheet</sub></td>
-<td align="center"><sub>Live todo card</sub></td>
+<td align="center"><sub>Subtasks</sub></td>
+<td align="center"><sub>Question card</sub></td>
+<td align="center"><sub>Todo card</sub></td>
 </tr>
 </table>
+
+## Everything else
+
+| Surface | What it does |
+| --- | --- |
+| **OmO provider** | OmO in Paseo's model picker, with streaming, tool calls and child sessions in Paseo's chat |
+| **OmO DAG** | The board and card views, from the sidebar, the command center or the workspace tab bar |
+| **Chat DAG card** | One card per run in the timeline, drawn once the run settles |
+| **OmO Approvals** | Pending confirmations, choices and questions for the current agent |
+| **OmO Folders** | Sessions, runs and tasks grouped into a browsable tree |
+| **OmO update** | Pause every OmO session, update OmO, and resume them where they were |
+| **Harness wrap** | OmO's harness XML, memory notes and error envelopes folded into compact bars |
 
 ---
 
 ## Requirements
 
 - **Paseo 0.8.0 or newer** (declared in `paseo-plugin.json`)
-- **OmO** installed and reachable — the plugin resolves the `omo` executable from
-  `PATH` first, then falls back to a Bun global install
-  (`~/.bun/install/global/node_modules/omo-ai/bin/omo.js`)
+- **OmO 5** installed and reachable. The plugin looks for OmO's Bun global
+  install first (`~/.bun/install/global/node_modules/omo-ai/bin/omo.js`), then
+  `omo` on `PATH`.
 
 ## Install
 
-Paseo installs plugins straight from a Git source. On the machine running the
-Paseo daemon:
+On the machine that runs the Paseo daemon:
 
 ```bash
 paseo plugin add Hakubisual/pase-omo
 ```
 
-That is the GitHub `owner/repository` shorthand. A full Git URL works too:
+A full Git URL works too:
 
 ```bash
 paseo plugin add https://github.com/Hakubisual/pase-omo.git
 ```
 
-Omitting `--ref` tracks the repository's default branch. To pin a commit or tag,
-or to track a different branch, pass one:
+Pin a branch, tag or commit with `--ref`:
 
 ```bash
 paseo plugin add Hakubisual/pase-omo --ref main
@@ -144,26 +156,19 @@ paseo plugin add Hakubisual/pase-omo --ref ko
 
 ```bash
 paseo plugin ls              # installed plugins and their runtime ids
-paseo plugin status          # fetch tracked refs, compare installed vs available
+paseo plugin status          # compare installed and available refs
 paseo plugin update omo      # update this plugin
-paseo plugin update --all    # update everything
-paseo plugin logs omo        # recent plugin log tail
+paseo plugin logs omo        # recent plugin log
 ```
 
-The plugin registers under the runtime id **`omo`**. Pass `--id` at install time
-if that id is already taken on your daemon.
+The plugin registers under the runtime id **`omo`**. Pass `--id` at install
+time if that id is taken on your daemon.
 
-### From a local checkout
+After updating, restart Paseo fully (quit it from the tray) so both the app and
+the daemon pick up the new code.
 
-```bash
-git clone https://github.com/Hakubisual/pase-omo.git
-paseo plugin install /absolute/path/to/pase-omo
-```
-
-> **Trust every plugin you add.** Paseo plugins are unsandboxed: server code runs
-> with the daemon user's access on the daemon host, and client contributions run
-> inside the Paseo app. Installing a plugin means trusting its codebase, its
-> dependencies and its future updates.
+> **Trust every plugin you add.** Paseo plugins are not sandboxed: server code
+> runs with the daemon user's access, and client code runs inside the Paseo app.
 
 ---
 
@@ -175,20 +180,13 @@ bun x tsc --noEmit    # types
 bun x vitest run      # tests
 ```
 
-No `build` step is declared, so Paseo compiles the sources directly on install —
-there is no bundle to produce.
-
-`extension/omo-tools.ts` is the OmO-side half: an optional extension exposing a
-`paseo_workers` tool so OmO can launch and inspect Paseo terminal workers itself.
-It types against a local structural declaration of the senpi extension API
-(`extension/senpi-types.ts`), so the repository stays installable and
-type-checkable without a local senpi checkout.
+No `build` step is declared, so Paseo compiles the sources on install.
 
 | Path | Role |
 | --- | --- |
-| `index.client.tsx` | Every client contribution: panels, surface, command items, renderers, pills |
-| `index.server.ts` | Daemon side: the agent provider, DAG/approval/worker RPCs, timeline publisher |
-| `client/` | React Native views — graph layout and visuals, DAG panel, approvals, folders, todo card |
+| `index.client.tsx` | Every client contribution: panels, surface, commands, renderers, pills |
+| `index.server.ts` | Daemon side: the agent provider, DAG and approval RPCs, the timeline publisher |
+| `client/` | React Native views — the board, graph layout, DAG panel, approvals, folders, todo card |
 | `server/` | Provider, session store, DAG snapshot readers, worker manager |
 | `shared/` | Row schemas and RPC contracts shared by both halves |
 
@@ -204,7 +202,7 @@ I believe one person can actually ship in a day. I built this plugin because I
 wanted to *see* what OmO was doing, and none of it would exist without his work.
 Go look at what he builds.
 
-And thanks to the [Paseo](https://getpaseo.com) team for a plugin API open enough
+Thanks to everyone who sent pull requests for OmO 5 support, and to the [Paseo](https://getpaseo.com) team for a plugin API open enough
 that an agent can bring its whole interface with it.
 
 This repository was written with [OmO](https://github.com/code-yeongyu/oh-my-openagent),
