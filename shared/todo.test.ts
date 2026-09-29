@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { TODO_ROW_KIND, TODO_ROW_VERSION, TodoRowSchema, todoPluginItems, toTodoRow } from "./todo";
+import { TODO_ROW_KIND, TODO_ROW_VERSION, TodoRowSchema, todoPluginItems, todoToolCallItems, toTodoRow } from "./todo";
 
 /**
  * The card is built from the agent's own todo timeline item, so every shape the
@@ -173,4 +173,11 @@ test("a task flips pending, in_progress, then completed and every update stays t
 test("a todo item with nothing usable in it leaves the built-in row alone", () => {
   expect(todoPluginItems({ type: "todo", items: [] }, "complete")).toBeUndefined();
   expect(todoPluginItems({ type: "todo", items: [{ completed: true }] }, "complete")).toBeUndefined();
+});
+
+test("a successful todo tool call is hidden, a failed one and every other tool stay", () => {
+  expect(todoToolCallItems({ type: "tool_call", name: "todo", status: "completed" })).toEqual({ items: [] });
+  expect(todoToolCallItems({ type: "tool_call", name: "todo", status: "running" })).toEqual({ items: [] });
+  expect(todoToolCallItems({ type: "tool_call", name: "todo", status: "failed" })).toBeUndefined();
+  expect(todoToolCallItems({ type: "tool_call", name: "read", status: "completed" })).toBeUndefined();
 });

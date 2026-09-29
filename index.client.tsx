@@ -2,7 +2,6 @@ import type { PluginCleanup } from "@getpaseo/plugin";
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 
 import { ApprovalPanel } from "./client/approval-panel.js";
-import { contributeApprovalPill } from "./client/approval-pill.js";
 import { setDagNavigationHost } from "./client/dag-navigation.js";
 import { contributeDagPill } from "./client/dag-pill.js";
 import { FoldersPanel } from "./client/folders-panel.js";
@@ -142,7 +141,6 @@ export default function contribute(client: PluginClientContext): PluginCleanup {
     }),
     contributeDagPill(client),
     contributeUpdateButton(client),
-    contributeApprovalPill(client),
     contributeTodoClient(client),
     contributeWrapClient(client),
   );

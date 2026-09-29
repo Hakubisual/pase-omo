@@ -102,6 +102,21 @@ export type TodoPluginItem = {
 };
 
 /**
+ * Hides a successful `todo` tool call from the chat.
+ *
+ * Every call to OmO's todo tool is stored as its own tool row carrying the
+ * whole list as text, so a turn that ticks three items off drew three
+ * near-identical rows back to back. The list itself reaches the chat as the one
+ * todo card per turn and the composer's task chip, so the rows add nothing. A
+ * failed call stays visible: that is an error worth reading, not a duplicate.
+ */
+export function todoToolCallItems(item: unknown): { items: [] } | undefined {
+  const call = item as { name?: unknown; status?: unknown } | null;
+  if (call?.name !== "todo" || call.status === "failed") return undefined;
+  return { items: [] };
+}
+
+/**
  * The transform result for one `todo` timeline item.
  *
  * Exactly one item is emitted, pinned to the SOURCE item's id. The transformer

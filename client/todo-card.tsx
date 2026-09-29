@@ -3,7 +3,14 @@ import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plu
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { TODO_ROW_KIND, TODO_ROW_VERSION, TodoRowSchema, todoPluginItems, type TodoRow } from "../shared/todo";
+import {
+  TODO_ROW_KIND,
+  TODO_ROW_VERSION,
+  TodoRowSchema,
+  todoPluginItems,
+  todoToolCallItems,
+  type TodoRow,
+} from "../shared/todo";
 import { createStyles, todoCardModel } from "./todo-visual";
 
 /**
@@ -90,6 +97,11 @@ export function contributeTodoClient(client: PluginClientContext): PluginCleanup
       id: "omo-todo",
       query: { itemType: "todo" },
       transform: ({ item, phase }) => todoPluginItems(item, phase),
+    }),
+    client.addTimelineTransformer({
+      id: "omo-todo-calls",
+      query: { itemType: "tool_call" },
+      transform: ({ item }) => todoToolCallItems(item),
     }),
   ];
 
