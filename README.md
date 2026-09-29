@@ -11,7 +11,7 @@ Questions you can actually answer. On desktop and on your phone.
 
 </div>
 
-![OmO running a six-node workflow DAG in Paseo](docs/images/hero.png)
+![OmO running a nine-node workflow DAG in Paseo](docs/images/hero.png)
 
 ---
 
@@ -28,13 +28,15 @@ Every `workflow` run becomes a real dependency graph in the chat timeline. Arrow
 turn green as upstream nodes finish, and the run keeps one card instead of
 stacking a new one on every state change.
 
+<img src="docs/images/dag-graph.png" width="800" alt="A workflow DAG: nine nodes across four layers, three done, two running, one blocked and three pending">
+
 <img src="docs/images/chat-dag-card.png" width="700" alt="DAG card in the chat timeline">
 
 The same run opens in a side panel with every session under the project, run and
 task counts, and an inspector: tap any node for its description, the agent and
 model that ran it, turn and tool-call counts, elapsed time and the linked task id.
 
-<img src="docs/images/node-detail.png" width="700" alt="OmO DAG panel with the node detail inspector open">
+<img src="docs/images/node-detail.png" width="800" alt="OmO DAG panel with the node detail inspector open">
 
 ### Todo cards that tick off live
 

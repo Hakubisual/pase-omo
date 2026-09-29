@@ -11,7 +11,7 @@
 
 </div>
 
-![Paseo에서 6노드 워크플로우 DAG를 실행 중인 OmO](docs/images/hero.png)
+![Paseo에서 9노드 워크플로우 DAG를 실행 중인 OmO](docs/images/hero.png)
 
 ---
 
@@ -27,6 +27,8 @@
 `workflow` 실행이 채팅 타임라인에 진짜 의존성 그래프로 그려진다. 선행 노드가 끝나면
 화살표가 초록으로 바뀌고, 상태가 바뀔 때마다 카드가 쌓이는 대신 실행 하나당 한 장을
 유지한다.
+
+<img src="docs/images/dag-graph.png" width="800" alt="9노드 워크플로우 DAG — 네 개 레이어, 완료 3개·실행 중 2개·차단 1개·대기 3개">
 
 <img src="docs/images/chat-dag-card.png" width="700" alt="채팅 타임라인의 DAG 카드">
 
