@@ -312,6 +312,8 @@ export class OmoSession {
   private lastTodoSignature: string | undefined;
   /** Latest list seen this turn, drawn once when the turn ends. */
   private pendingTodoItems: TodoPublishItem[] | undefined;
+  /** Finished-turn list waiting for the turn-ended hook to draw it. */
+  private todoCardReady: TodoPublishItem[] | undefined;
   private readonly unregisterSession: () => void;
   private closed = false;
   /** True between `suspend()` and `resume()`, when no child process exists. */
@@ -369,13 +371,38 @@ export class OmoSession {
   }
 
   /**
-   * Timeline id of this session's live todo card.
+   * Timeline id of this session's todo card.
    *
-   * Stable for the session so repeated `todo` calls rewrite one card instead of
-   * appending another copy of the same list.
+   * Stable for the session so each turn's card replaces the last one: the
+   * daemon replaces a plugin row re-appended under the same id, which a
+   * provider `todo` item never does.
    */
   private get todoItemId(): string {
     return `todo-${this.sessionId}`;
+  }
+
+  /**
+   * The card the turn that just ended wants drawn, retained until acknowledged.
+   *
+   * Drawn from the `agent.turn_ended` hook through `timeline.append`, because
+   * only that path replaces an earlier row; a provider `todo` item is appended
+   * as another card every time and left one per turn in the chat.
+   */
+  takeTodoCard(): { id: string; items: TodoPublishItem[] } | undefined {
+    const items = this.todoCardReady;
+    return items === undefined ? undefined : { id: this.todoItemId, items };
+  }
+
+  /** Called only after timeline.append succeeds; a failed append stays retryable. */
+  async acknowledgeTodoCard(items: TodoPublishItem[]): Promise<void> {
+    const signature = holdTodo(items).signature;
+    this.lastTodoSignature = signature;
+    // An append in flight must not clear a newer finished turn's card.
+    if (this.todoCardReady === items) this.todoCardReady = undefined;
+    await rememberPublishedTodo(this.todoMemoryKey, signature).catch((error: unknown) => {
+      // Losing the note costs one duplicate card after a reload, not the card.
+      this.options.log(`todo card memory write failed: ${describe(error)}`);
+    });
   }
 
   getPendingUiRequests(): PendingApprovalRequest[] {
@@ -926,13 +953,7 @@ export class OmoSession {
     const finalTodo = finalTodoPublication(this.lastTodoSignature, this.pendingTodoItems);
     this.pendingTodoItems = undefined;
     if (finalTodo.publish && finalTodo.items !== undefined && finalTodo.signature !== undefined) {
-      const signature = finalTodo.signature;
-      this.lastTodoSignature = signature;
-      this.item({ type: "todo", id: this.todoItemId, items: finalTodo.items });
-      void rememberPublishedTodo(this.todoMemoryKey, signature).catch((error: unknown) => {
-        // Losing the note costs one duplicate card after a reload, not the card.
-        this.options.log(`todo card memory write failed: ${describe(error)}`);
-      });
+      this.todoCardReady = finalTodo.items;
     }
 
     const turnId = this.activeTurnId;
