@@ -16,6 +16,7 @@ export type LiveOmoSession = Pick<
   | "respondToUiRequest"
   | "sessionId"
   | "takeTodoCard"
+  | "acknowledgeTodoCard"
   | "suspend"
   | "resume"
 >;

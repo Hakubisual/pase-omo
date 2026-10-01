@@ -382,7 +382,7 @@ export class OmoSession {
   }
 
   /**
-   * The card the turn that just ended wants drawn, handed over once.
+   * The card the turn that just ended wants drawn, retained until acknowledged.
    *
    * Drawn from the `agent.turn_ended` hook through `timeline.append`, because
    * only that path replaces an earlier row; a provider `todo` item is appended
@@ -390,8 +390,19 @@ export class OmoSession {
    */
   takeTodoCard(): { id: string; items: TodoPublishItem[] } | undefined {
     const items = this.todoCardReady;
-    this.todoCardReady = undefined;
     return items === undefined ? undefined : { id: this.todoItemId, items };
+  }
+
+  /** Called only after timeline.append succeeds; a failed append stays retryable. */
+  async acknowledgeTodoCard(items: TodoPublishItem[]): Promise<void> {
+    const signature = holdTodo(items).signature;
+    this.lastTodoSignature = signature;
+    // An append in flight must not clear a newer finished turn's card.
+    if (this.todoCardReady === items) this.todoCardReady = undefined;
+    await rememberPublishedTodo(this.todoMemoryKey, signature).catch((error: unknown) => {
+      // Losing the note costs one duplicate card after a reload, not the card.
+      this.options.log(`todo card memory write failed: ${describe(error)}`);
+    });
   }
 
   getPendingUiRequests(): PendingApprovalRequest[] {
@@ -942,13 +953,7 @@ export class OmoSession {
     const finalTodo = finalTodoPublication(this.lastTodoSignature, this.pendingTodoItems);
     this.pendingTodoItems = undefined;
     if (finalTodo.publish && finalTodo.items !== undefined && finalTodo.signature !== undefined) {
-      const signature = finalTodo.signature;
-      this.lastTodoSignature = signature;
       this.todoCardReady = finalTodo.items;
-      void rememberPublishedTodo(this.todoMemoryKey, signature).catch((error: unknown) => {
-        // Losing the note costs one duplicate card after a reload, not the card.
-        this.options.log(`todo card memory write failed: ${describe(error)}`);
-      });
     }
 
     const turnId = this.activeTurnId;

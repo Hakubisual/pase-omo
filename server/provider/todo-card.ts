@@ -29,4 +29,5 @@ export async function publishTodoCard(
     version: TODO_ROW_VERSION,
     data,
   });
+  await session.acknowledgeTodoCard(card.items);
 }
