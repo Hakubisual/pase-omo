@@ -15,6 +15,7 @@ export type LiveOmoSession = Pick<
   | "getPendingUiRequests"
   | "respondToUiRequest"
   | "sessionId"
+  | "takeTodoCard"
   | "suspend"
   | "resume"
 >;
