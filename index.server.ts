@@ -6,6 +6,8 @@ import { agentDagSnapshot, createPublisher } from "./server/chat/publisher.js";
 import { getSnapshot, listSessions, locateDag } from "./server/dag/dag.js";
 import { listProjects } from "./server/dag/projects.js";
 import { registerApprovalHandlers } from "./server/provider/approval.js";
+import { omoSessionRegistry } from "./server/provider/session-registry.js";
+import { publishTodoCard } from "./server/provider/todo-card.js";
 import { createOmoProvider } from "./server/provider/provider.js";
 import { registerUpdateHandlers } from "./server/provider/update.js";
 import { registerWorkerHandlers } from "./server/workers/workers.js";
@@ -78,9 +80,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   const offTurnStarted = server.on("agent.turn_started", (event, context) =>
     publisher.onTurnStarted(event.agent, context),
   );
-  const offTurnEnded = server.on("agent.turn_ended", (event, context) =>
-    publisher.onTurnEnded(event.agent, context),
-  );
+  const offTurnEnded = server.on("agent.turn_ended", async (event, context) => {
+    await publisher.onTurnEnded(event.agent, context);
+    // A failed todo card must not take the DAG publisher's hook down with it.
+    await publishTodoCard(omoSessionRegistry, event.agent, context).catch((error: unknown) => {
+      console.error("[omo-todo] card publish failed", error);
+    });
+  });
 
   return async () => {
     offTurnStarted();

@@ -34,6 +34,8 @@ function fakeSession(id: string, log: string[], failOn?: "suspend" | "resume"): 
     durableSessionFile: `${id}.jsonl`,
     getPendingUiRequests: () => [],
     respondToUiRequest: () => {},
+    takeTodoCard: () => undefined,
+    acknowledgeTodoCard: async () => {},
     async suspend() {
       if (failOn === "suspend") throw new Error("stuck");
       log.push(`suspend:${id}`);
@@ -200,6 +202,8 @@ it("keeps a defect inside the job instead of leaving the button spinning", async
     durableSessionFile: undefined,
     getPendingUiRequests: () => [],
     respondToUiRequest: () => {},
+    takeTodoCard: () => undefined,
+    acknowledgeTodoCard: async () => {},
     suspend: (() => {
       throw new Error("not even a promise");
     }) as unknown as LiveOmoSession["suspend"],
