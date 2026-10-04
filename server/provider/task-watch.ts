@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import type { ProviderEvent } from "@getpaseo/plugin/server/provider";
 
+import { taskStateDir } from "../task-state";
+
 /**
  * `task()` runs, surfaced as the child sessions Paseo already knows how to draw.
  *
@@ -155,8 +157,9 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
   return { events, state };
 }
 
-export function tasksDirectory(cwd: string): string {
-  return join(cwd, ...TASKS_DIR_SEGMENTS);
+/** Same tree as the background-work readers: `PASEO_OMO_TASK_STATE_DIR` applies here too. */
+export function tasksDirectory(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(taskStateDir(cwd, env), "tasks");
 }
 
 /** Reads the task records this OmO session spawned. Missing directory = none. */
