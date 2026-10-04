@@ -121,7 +121,9 @@ graph, where there is room for it.
 
 ## Requirements
 
-- **Paseo 0.8.0 or newer** (declared in `paseo-plugin.json`)
+- **Paseo 0.8.0 or newer** (declared in `paseo-plugin.json`). The plugin is
+  built and tested against the current SDK, 0.10.3, and its suite also passes
+  against 0.11.0-beta.3.
 - **OmO 5** installed and reachable. The plugin looks for OmO's Bun global
   install first (`~/.bun/install/global/node_modules/omo-ai/bin/omo.js`), then
   `omo` on `PATH`.

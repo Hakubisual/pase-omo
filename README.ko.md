@@ -115,7 +115,8 @@ OmO 질문은 Paseo 기본 질문 카드로 온다:
 
 ## 요구 사항
 
-- **Paseo 0.8.0 이상** (`paseo-plugin.json`에 선언)
+- **Paseo 0.8.0 이상** (`paseo-plugin.json`에 선언). 플러그인은 현재 SDK인 0.10.3에
+  맞춰 빌드하고 테스트하며, 0.11.0-beta.3에서도 테스트가 모두 통과한다.
 - **OmO 5** 설치. 플러그인은 OmO의 Bun 글로벌 설치
   (`~/.bun/install/global/node_modules/omo-ai/bin/omo.js`)를 먼저 찾고, 그다음 `PATH`의
   `omo`를 찾는다.
