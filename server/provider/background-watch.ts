@@ -29,6 +29,7 @@ const DAG_TERMINAL: ReadonlySet<string> = new Set([
   "interrupted",
   "lost",
   "failed",
+  "skipped",
 ]);
 
 type Json = Record<string, unknown>;

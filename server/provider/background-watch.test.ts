@@ -67,6 +67,7 @@ describe("readOpenWork", () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "r1.json"), JSON.stringify({ runId: "r1", name: "Build", parentSessionId: SESSION, status: "running" }));
     await writeFile(join(dir, "r2.json"), JSON.stringify({ runId: "r2", parentSessionId: SESSION, status: "completed" }));
+    await writeFile(join(dir, "r3.json"), JSON.stringify({ runId: "r3", parentSessionId: SESSION, status: "skipped" }));
     expect(await readOpenWork(cwd, SESSION, env)).toEqual([
       { kind: "dag", id: "r1", title: "Build", description: "Workflow Build" },
     ]);

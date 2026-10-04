@@ -53,12 +53,12 @@ vi.mock("./background-watch.js", async (importOriginal) => ({
 const PARENT = "provider-session-1";
 const sessions: OmoSession[] = [];
 
-function createSession() {
+function createSession(env: Record<string, string> = {}) {
   const emit = vi.fn();
   const session = new OmoSession({
     paseoSessionId: PARENT,
     launch: { command: "omo", base: [], origin: "test" },
-    config: { cwd: "E:/workspace", env: {}, mcpServers: {}, settings: {}, persist: true },
+    config: { cwd: "E:/workspace", env, mcpServers: {}, settings: {}, persist: true },
     capabilities: ["permission"],
     emit,
     log: vi.fn(),
@@ -327,5 +327,16 @@ describe("a turn held open by background work", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("reads tasks and open work from the session env, not the daemon env", async () => {
+    const { process, session } = createSession({ PASEO_OMO_TASK_STATE_DIR: "/override" });
+    process.emit({ type: "agent_start" });
+    process.emit({ type: "agent_end" });
+    await session["pendingSettle"];
+
+    const env = expect.objectContaining({ PASEO_OMO_TASK_STATE_DIR: "/override" });
+    expect(mocks.readTaskRecords).toHaveBeenCalledWith("E:/workspace", "omo-1", env);
+    expect(mocks.readOpenWork).toHaveBeenCalledWith("E:/workspace", "omo-1", env);
   });
 });

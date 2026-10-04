@@ -163,10 +163,15 @@ export function tasksDirectory(cwd: string, env: NodeJS.ProcessEnv = process.env
 }
 
 /** Reads the task records this OmO session spawned. Missing directory = none. */
-export async function readTaskRecords(cwd: string, omoSessionId: string): Promise<TaskRecord[]> {
+export async function readTaskRecords(
+  cwd: string,
+  omoSessionId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<TaskRecord[]> {
+  const dir = tasksDirectory(cwd, env);
   let names: string[];
   try {
-    names = await readdir(tasksDirectory(cwd));
+    names = await readdir(dir);
   } catch {
     return [];
   }
@@ -174,7 +179,7 @@ export async function readTaskRecords(cwd: string, omoSessionId: string): Promis
   for (const name of names) {
     if (!name.startsWith("st_") || !name.endsWith(".json")) continue;
     try {
-      const parsed: unknown = JSON.parse(await readFile(join(tasksDirectory(cwd), name), "utf8"));
+      const parsed: unknown = JSON.parse(await readFile(join(dir, name), "utf8"));
       if (typeof parsed !== "object" || parsed === null) continue;
       const record = parsed as TaskRecord;
       if (typeof record.task_id !== "string" || record.task_id.length === 0) continue;

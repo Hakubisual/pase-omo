@@ -551,7 +551,7 @@ export class OmoSession {
     if (!cwd || !omoSessionId) return;
     this.taskScanning = true;
     try {
-      for (const record of await readTaskRecords(cwd, omoSessionId)) {
+      for (const record of await readTaskRecords(cwd, omoSessionId, this.sessionEnv())) {
         if (this.closed) return;
         const { events, state } = taskChildEvents({
           record,
@@ -562,7 +562,7 @@ export class OmoSession {
         this.taskStates.set(record.task_id, state);
         for (const event of events) this.emit(event);
       }
-      const openWork = await readOpenWork(cwd, omoSessionId);
+      const openWork = await readOpenWork(cwd, omoSessionId, this.sessionEnv());
       if (openWork !== "unreadable") this.openWork = openWork;
       this.publishWatchChildren();
     } catch (error) {
@@ -638,6 +638,11 @@ export class OmoSession {
     this.completeTurn(this.settleEvent);
   }
 
+  /** The env the OmO child was launched with, so probes read the tree that child writes. */
+  private sessionEnv(): NodeJS.ProcessEnv {
+    return { ...process.env, ...this.config.env };
+  }
+
   /** Fails closed: a probe that cannot answer never completes the turn. */
   private async probeOccupancy(): Promise<{
     occupied: boolean;
@@ -649,8 +654,8 @@ export class OmoSession {
       const omoSessionId = this.state.sessionId;
       const [raw, records, openWork] = await Promise.all([
         this.proc.call<unknown>("get_state", {}, SETTLE_PROBE_TIMEOUT_MS),
-        omoSessionId ? readTaskRecords(cwd, omoSessionId) : [],
-        omoSessionId ? readOpenWork(cwd, omoSessionId) : [],
+        omoSessionId ? readTaskRecords(cwd, omoSessionId, this.sessionEnv()) : [],
+        omoSessionId ? readOpenWork(cwd, omoSessionId, this.sessionEnv()) : [],
       ]);
       if (openWork === "unreadable") return { occupied: true };
       const bash = await readBash(raw, omoSessionId);
