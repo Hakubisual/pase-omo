@@ -345,6 +345,8 @@ export class OmoSession {
   private todoCardReady: TodoPublishItem[] | undefined;
   private readonly unregisterSession: () => void;
   private closed = false;
+  /** Startup snapshots must not publish children before the parent handshake. */
+  private openingEvents: OmoEvent[] | undefined;
   /** True between `suspend()` and `resume()`, when no child process exists. */
   private suspended = false;
   /** What has already been published for each `task()` run, keyed by task id. */
@@ -396,7 +398,10 @@ export class OmoSession {
           ),
         ),
       },
-      onEvent: (event) => this.handleEvent(event),
+      onEvent: (event) => {
+        if (this.openingEvents) this.openingEvents.push(event);
+        else this.handleEvent(event);
+      },
       onExit: ({ code, stderr }) => {
         // A suspended session asked for this exit; reporting it would surface
         // the pause as a crash and mark the agent failed in Paseo.
@@ -505,6 +510,7 @@ export class OmoSession {
 
   /** Spawn, wait for the agent session to exist, and publish the opened state. */
   async open(requestId: string, history: "replay" | "skip"): Promise<void> {
+    this.openingEvents = [];
     this.proc.start();
     this.state = await this.proc.call<OmoStateRecord>("get_state", {}, 240_000);
     // What the chat already shows, so a reopened session does not redraw it.
@@ -527,6 +533,9 @@ export class OmoSession {
       ...(title ? { title } : {}),
       cwd: this.config.cwd,
     });
+    const openingEvents = this.openingEvents;
+    this.openingEvents = undefined;
+    for (const event of openingEvents) this.handleEvent(event);
     this.emit({ type: "session.config", sessionId: this.sessionId, config: this.configState() });
     this.publishCommands();
     if (history === "replay") await this.replay();

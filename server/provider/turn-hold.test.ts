@@ -104,6 +104,19 @@ afterEach(() => {
 });
 
 describe("a turn held open by background work", () => {
+  it("opens the parent before children restored during RPC startup", async () => {
+    const { process, session, emit } = createSession();
+    mocks.getState = async () => {
+      wake(process, "senpi-codemode", 1, ["restored-cell"]);
+      return { sessionId: "omo-1", cwd: "E:/workspace" };
+    };
+
+    await session.open("open-parent", "skip");
+
+    expect(events(emit).filter((event) => event.type === "session.opened").map((event) => event.sessionId))
+      .toEqual([PARENT, "restored-cell"]);
+  });
+
   it("stays open while a codemode cell is outstanding and completes once it ends", async () => {
     const { process, session, emit } = createSession();
     process.emit({ type: "agent_start" });
