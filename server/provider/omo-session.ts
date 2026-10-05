@@ -15,7 +15,22 @@ import { type OmoEvent, OmoProcess } from "./omo-process.js";
 import { todoItems, toolCallDetail, toolResultText } from "./tool-detail.js";
 import { finalTodoPublication, holdTodo, type TodoPublishItem } from "./todo-publish.js";
 import { lastPublishedTodo, rememberPublishedTodo } from "./todo-memory.js";
-import { readTaskRecords, taskChildEvents, type TaskState } from "./task-watch.js";
+import { isTerminalTask, readTaskRecords, taskChildEvents, type TaskState } from "./task-watch.js";
+import {
+  foldWakeEvent,
+  isOccupied,
+  type OccupancyFlags,
+  type OccupancyInput,
+  type WakeSnapshot,
+} from "./occupancy.js";
+import {
+  projectWatchChildren,
+  readBackgroundSessions,
+  readOpenWork,
+  type OpenWork,
+  type WatchChild,
+  type WatchChildState,
+} from "./background-watch.js";
 import { visibleTimelineItems } from "./text-wrap.js";
 
 type Json = Record<string, unknown>;
@@ -38,6 +53,9 @@ const PROCESS_EXIT_GRACE_MS = 5_000;
  */
 const TASK_POLL_ACTIVE_MS = 2_000;
 const TASK_POLL_IDLE_MS = 15_000;
+
+/** How long the settle probe waits for `get_state` before it counts as failed (and the turn stays held). */
+const SETTLE_PROBE_TIMEOUT_MS = 5_000;
 
 function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -187,13 +205,24 @@ const RPC_CLIENT_CAPABILITIES_ENV = "SENPI_RPC_CLIENT_CAPABILITIES";
  * environment keeps everything it already asked for.
  */
 export function withQuestionCapability(existing: string | undefined): string {
+  return addCapability(existing, "question");
+}
+
+/**
+ * `extension_event` records (wake source and monitor snapshots, task updates)
+ * reach this client only when it advertises them; the parent turn cannot tell
+ * that background work is still running without them.
+ */
+export function withExtensionEvents(existing: string | undefined): string {
+  return addCapability(existing, "extension_events");
+}
+
+function addCapability(existing: string | undefined, capability: string): string {
   const advertised = (existing ?? "")
     .split(",")
-    .map((capability) => capability.trim())
-    .filter((capability) => capability.length > 0);
-  return advertised.includes("question")
-    ? advertised.join(",")
-    : [...advertised, "question"].join(",");
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return advertised.includes(capability) ? advertised.join(",") : [...advertised, capability].join(",");
 }
 
 /** One OmO question as Paseo's question card answers it: keyed by `header`. */
@@ -316,12 +345,29 @@ export class OmoSession {
   private todoCardReady: TodoPublishItem[] | undefined;
   private readonly unregisterSession: () => void;
   private closed = false;
+  /** Startup snapshots must not publish children before the parent handshake. */
+  private openingEvents: OmoEvent[] | undefined;
   /** True between `suspend()` and `resume()`, when no child process exists. */
   private suspended = false;
   /** What has already been published for each `task()` run, keyed by task id. */
   private readonly taskStates = new Map<string, TaskState>();
   private taskTimer: ReturnType<typeof setTimeout> | null = null;
   private taskScanning = false;
+  /** Latest full `wake_source_state` snapshot per source. */
+  private wakes: ReadonlyMap<string, WakeSnapshot> = new Map();
+  /** Latest `terminal_monitor_state`: open count and the monitors as watch children. */
+  private monitorCount = 0;
+  private monitorChildren: WatchChild[] = [];
+  private bashChildren: WatchChild[] = [];
+  /** Workpool items and DAG runs from the last successful read. */
+  private openWork: OpenWork[] = [];
+  private watchStates: ReadonlyMap<string, WatchChildState> = new Map();
+  /** True while the turn's agent loop ended but background work keeps it open. */
+  private holding = false;
+  /** Bumped on every settle and every turn boundary, so a stale probe can tell it lost. */
+  private settleGeneration = 0;
+  private settleEvent: OmoEvent | undefined;
+  private pendingSettle: Promise<void> | undefined;
 
   constructor(options: OmoSessionOptions) {
     this.options = options;
@@ -346,11 +392,16 @@ export class OmoSession {
         ...(process.env as Record<string, string>),
         ...options.config.env,
         NO_COLOR: "1",
-        [RPC_CLIENT_CAPABILITIES_ENV]: withQuestionCapability(
-          options.config.env?.[RPC_CLIENT_CAPABILITIES_ENV] ?? process.env[RPC_CLIENT_CAPABILITIES_ENV],
+        [RPC_CLIENT_CAPABILITIES_ENV]: withExtensionEvents(
+          withQuestionCapability(
+            options.config.env?.[RPC_CLIENT_CAPABILITIES_ENV] ?? process.env[RPC_CLIENT_CAPABILITIES_ENV],
+          ),
         ),
       },
-      onEvent: (event) => this.handleEvent(event),
+      onEvent: (event) => {
+        if (this.openingEvents) this.openingEvents.push(event);
+        else this.handleEvent(event);
+      },
       onExit: ({ code, stderr }) => {
         // A suspended session asked for this exit; reporting it would surface
         // the pause as a crash and mark the agent failed in Paseo.
@@ -459,6 +510,7 @@ export class OmoSession {
 
   /** Spawn, wait for the agent session to exist, and publish the opened state. */
   async open(requestId: string, history: "replay" | "skip"): Promise<void> {
+    this.openingEvents = [];
     this.proc.start();
     this.state = await this.proc.call<OmoStateRecord>("get_state", {}, 240_000);
     // What the chat already shows, so a reopened session does not redraw it.
@@ -481,6 +533,9 @@ export class OmoSession {
       ...(title ? { title } : {}),
       cwd: this.config.cwd,
     });
+    const openingEvents = this.openingEvents;
+    this.openingEvents = undefined;
+    for (const event of openingEvents) this.handleEvent(event);
     this.emit({ type: "session.config", sessionId: this.sessionId, config: this.configState() });
     this.publishCommands();
     if (history === "replay") await this.replay();
@@ -505,7 +560,7 @@ export class OmoSession {
     if (!cwd || !omoSessionId) return;
     this.taskScanning = true;
     try {
-      for (const record of await readTaskRecords(cwd, omoSessionId)) {
+      for (const record of await readTaskRecords(cwd, omoSessionId, this.sessionEnv())) {
         if (this.closed) return;
         const { events, state } = taskChildEvents({
           record,
@@ -516,11 +571,142 @@ export class OmoSession {
         this.taskStates.set(record.task_id, state);
         for (const event of events) this.emit(event);
       }
+      const openWork = await readOpenWork(cwd, omoSessionId, this.sessionEnv());
+      if (openWork !== "unreadable") this.openWork = openWork;
+      this.publishWatchChildren();
     } catch (error) {
       this.options.log(`task scan failed: ${describe(error)}`);
     } finally {
       this.taskScanning = false;
+      this.recheck();
     }
+  }
+
+  /** Child sessions for everything that is not an `st_` task record. */
+  private publishWatchChildren(): void {
+    const live = new Map<string, WatchChild>();
+    for (const wake of this.wakes.values()) {
+      for (const item of wake.items ?? []) {
+        const description = item.description ?? `Background ${wake.source} ${item.id}`;
+        live.set(item.id, { id: item.id, title: item.description ?? item.id, description });
+      }
+    }
+    for (const monitor of this.monitorChildren) live.set(monitor.id, monitor);
+    for (const bash of this.bashChildren) live.set(bash.id, bash);
+    for (const work of this.openWork) {
+      live.set(work.id, { id: work.id, title: work.title, description: work.description });
+    }
+    const { events, state } = projectWatchChildren({
+      live: [...live.values()],
+      parentSessionId: this.sessionId,
+      cwd: this.state.cwd ?? this.config.cwd,
+      previous: this.watchStates,
+    });
+    this.watchStates = state;
+    for (const event of events) this.emit(event);
+  }
+
+  // --------------------------------------------------------------- turn hold
+
+  /** Forgets any hold and invalidates every probe still in flight. */
+  private clearHold(): void {
+    this.settleGeneration += 1;
+    this.holding = false;
+    this.settleEvent = undefined;
+  }
+
+  /**
+   * The agent loop went quiet: complete the turn unless OmO still owns background
+   * work. `agent_idle` is not proof of idle (it ignores wake sources), so every
+   * quiet signal goes through the same probe.
+   */
+  private startSettle(event: OmoEvent | undefined): void {
+    if (this.closed || this.activeTurnId === null) return;
+    if (event !== undefined) this.settleEvent = event;
+    this.settleGeneration += 1;
+    this.pendingSettle = this.settle(this.settleGeneration).catch((error: unknown) => {
+      this.options.log(`settle failed: ${describe(error)}`);
+    });
+  }
+
+  /** A held turn re-asks whenever a signal that could clear occupancy arrives. */
+  private recheck(): void {
+    if (this.holding) this.startSettle(undefined);
+  }
+
+  private async settle(generation: number): Promise<void> {
+    const probe = await this.probeOccupancy();
+    if (generation !== this.settleGeneration || this.activeTurnId === null || this.closed) return;
+    if (probe.openWork !== undefined) this.openWork = probe.openWork;
+    if (probe.bashSessions !== undefined) this.bashChildren = probe.bashSessions;
+    if (probe.openWork !== undefined || probe.bashSessions !== undefined) this.publishWatchChildren();
+    if (probe.occupied) {
+      this.holding = true;
+      return;
+    }
+    this.completeTurn(this.settleEvent);
+  }
+
+  /** The env the OmO child was launched with, so probes read the tree that child writes. */
+  private sessionEnv(): NodeJS.ProcessEnv {
+    return { ...process.env, ...this.config.env };
+  }
+
+  /** Fails closed: a probe that cannot answer never completes the turn. */
+  private async probeOccupancy(): Promise<{
+    occupied: boolean;
+    openWork?: OpenWork[];
+    bashSessions?: WatchChild[];
+  }> {
+    try {
+      const cwd = this.state.cwd ?? this.config.cwd;
+      const omoSessionId = this.state.sessionId;
+      const [raw, records, openWork] = await Promise.all([
+        this.proc.call<unknown>("get_state", {}, SETTLE_PROBE_TIMEOUT_MS),
+        omoSessionId ? readTaskRecords(cwd, omoSessionId, this.sessionEnv()) : [],
+        omoSessionId ? readOpenWork(cwd, omoSessionId, this.sessionEnv()) : [],
+      ]);
+      if (openWork === "unreadable") return { occupied: true };
+      const bash = await readBash(raw, omoSessionId);
+      if (bash === "unreadable") return { occupied: true };
+      const input: OccupancyInput = {
+        wakes: [...this.wakes.values()],
+        flags: stateFlags(raw),
+        openTasks: records.filter((record) => !isTerminalTask(record)).length,
+        openWorkpoolItems: openWork.filter((work) => work.kind === "workpool").length,
+        openDagRuns: openWork.filter((work) => work.kind === "dag").length,
+        openMonitors: this.monitorCount,
+        openQuestions: Math.max(
+          questionCount(raw),
+          [...this.pendingUi.values()].filter((pending) => pending.method === "question").length,
+        ),
+        openBashSessions: bash.count,
+      };
+      return { occupied: isOccupied(input), openWork, bashSessions: bash.sessions };
+    } catch (error) {
+      this.options.log(`occupancy probe failed: ${describe(error)}`);
+      return { occupied: true };
+    }
+  }
+
+  private handleExtensionEvent(event: OmoEvent): void {
+    const name = typeof event.name === "string" ? event.name : "";
+    if (name === "wake_source_state") {
+      this.wakes = foldWakeEvent(this.wakes, { type: event.type, name, data: event.data });
+    } else if (name === "terminal_monitor_state") {
+      const snapshot = monitorSnapshot(event.data);
+      if (snapshot === undefined) return;
+      this.monitorCount = snapshot.count;
+      this.monitorChildren = snapshot.monitors;
+    } else if (name === "omo.task.updated") {
+      // Not parsed: the record on disk is the truth, and the scan rechecks the hold.
+      void this.scanTasks();
+      return;
+    } else {
+      return;
+    }
+    this.publishWatchChildren();
+    this.recheck();
   }
 
   private scheduleTaskScan(delayMs: number): void {
@@ -654,6 +840,7 @@ export class OmoSession {
       return;
     }
 
+    this.clearHold();
     this.turnSeq += 1;
     const turnId = `turn-${this.turnSeq}`;
     this.activeTurnId = turnId;
@@ -674,6 +861,7 @@ export class OmoSession {
 
   private failTurn(turnId: string, message: string): void {
     if (this.activeTurnId !== turnId) return;
+    this.clearHold();
     this.activeTurnId = null;
     this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: "failed", error: { message } });
   }
@@ -719,6 +907,7 @@ export class OmoSession {
 
     const turnId = this.activeTurnId;
     if (turnId) {
+      this.clearHold();
       this.activeTurnId = null;
       this.emit({ type: "session.turn", sessionId: this.sessionId, turnId, state: "canceled" });
     }
@@ -809,6 +998,7 @@ export class OmoSession {
     this.proc.notify(wireResponse);
     this.pendingUi.delete(permissionId);
     this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId });
+    this.recheck();
   }
 
   respondToPermission(permissionId: string, response: ProviderPermissionResponse): void {
@@ -868,11 +1058,13 @@ export class OmoSession {
       }
     }
     this.emit({ type: "session.permission_resolved", sessionId: this.sessionId, permissionId });
+    this.recheck();
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.clearHold();
     if (this.taskTimer !== null) {
       clearTimeout(this.taskTimer);
       this.taskTimer = null;
@@ -888,6 +1080,7 @@ export class OmoSession {
   private handleEvent(event: OmoEvent): void {
     switch (event.type) {
       case "agent_start":
+        this.clearHold();
         if (!this.activeTurnId) {
           this.turnSeq += 1;
           this.activeTurnId = `turn-${this.turnSeq}`;
@@ -896,15 +1089,20 @@ export class OmoSession {
         return;
       case "agent_end":
         this.flushAll();
-        this.completeTurn(event);
+        if (event.willRetry === true) this.completeTurn(event);
+        else this.startSettle(event);
         return;
       case "agent_settled":
       case "agent_idle":
         this.flushAll();
-        this.completeTurn(undefined);
+        this.startSettle(undefined);
+        return;
+      case "extension_event":
+        this.handleExtensionEvent(event);
         return;
       case "session_abort": {
         this.flushAll();
+        this.clearHold();
         const turnId = this.activeTurnId;
         if (!turnId) return;
         this.activeTurnId = null;
@@ -948,6 +1146,7 @@ export class OmoSession {
   }
 
   private completeTurn(event: OmoEvent | undefined): void {
+    this.clearHold();
     // One card per turn, in the state the turn finished in: each publication is
     // its own timeline row, and the composer already counts the live progress.
     const finalTodo = finalTodoPublication(this.lastTodoSignature, this.pendingTodoItems);
@@ -1282,6 +1481,58 @@ export class OmoSession {
       });
     }
   }
+}
+
+function isRecord(value: unknown): value is Json {
+  return typeof value === "object" && value !== null;
+}
+
+/** Background bash lives in the terminal sidecar next to the session file, not on the RPC wire. */
+async function readBash(
+  raw: unknown,
+  fallbackSessionId: string | undefined,
+): Promise<{ sessions: WatchChild[]; count: number } | "unreadable"> {
+  const state = isRecord(raw) ? raw : {};
+  const sessionFile = typeof state.sessionFile === "string" ? state.sessionFile : undefined;
+  const sessionId = typeof state.sessionId === "string" ? state.sessionId : fallbackSessionId;
+  if (!sessionFile || !sessionId) return { sessions: [], count: 0 };
+  return readBackgroundSessions(sessionFile, sessionId);
+}
+
+/** Ask-user questions the host still has open. The wake event itself never reaches RPC. */
+function questionCount(raw: unknown): number {
+  const questions = isRecord(raw) ? raw.pendingQuestions : undefined;
+  return Array.isArray(questions) ? questions.length : 0;
+}
+
+/** What `get_state` says is still busy. It has no single busy flag, so queued input is summed here. */
+function stateFlags(raw: unknown): OccupancyFlags {
+  const state: Json = isRecord(raw) ? raw : {};
+  const length = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+  return {
+    isStreaming: state.isStreaming === true,
+    isBashRunning: state.isBashRunning === true,
+    isCompacting: state.isCompacting === true,
+    pendingMessageCount: typeof state.pendingMessageCount === "number" ? state.pendingMessageCount : 0,
+    retryAttempt: typeof state.retryAttempt === "number" ? state.retryAttempt : 0,
+    queuedInputs: length(state.steering) + length(state.followUp),
+  };
+}
+
+/** One full `terminal_monitor_state` snapshot: the open count and each monitor as a watch child. */
+function monitorSnapshot(data: unknown): { count: number; monitors: WatchChild[] } | undefined {
+  if (!isRecord(data) || typeof data.activeCount !== "number" || !Number.isFinite(data.activeCount)) return undefined;
+  const monitors: WatchChild[] = [];
+  for (const raw of Array.isArray(data.monitors) ? data.monitors : []) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || raw.id === "") continue;
+    const text = typeof raw.description === "string" && raw.description !== "" ? raw.description : undefined;
+    monitors.push({
+      id: raw.id,
+      title: text ?? raw.id,
+      description: text === undefined ? `Monitor ${raw.id}` : `Monitor: ${text}`,
+    });
+  }
+  return { count: Math.max(0, data.activeCount), monitors };
 }
 
 function roleOf(message: unknown): string | undefined {

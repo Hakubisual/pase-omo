@@ -153,3 +153,22 @@ it("treats a project with no task directory as having no children", async () => 
 
   expect(await readTaskRecords(root, "omo-session-1")).toEqual([]);
 });
+
+it("reads the override tree when the session env names one", async () => {
+  const root = await mkdtemp(join(tmpdir(), "omo-task-env-"));
+  const override = await mkdtemp(join(tmpdir(), "omo-task-override-"));
+  const record = {
+    task_id: "st_env",
+    parent_session_id: "omo-session-1",
+    status: "running",
+  };
+  await mkdir(join(override, "tasks"), { recursive: true });
+  await writeFile(join(override, "tasks", "st_env.json"), JSON.stringify(record));
+  try {
+    expect(await readTaskRecords(root, "omo-session-1")).toEqual([]);
+    expect(await readTaskRecords(root, "omo-session-1", { PASEO_OMO_TASK_STATE_DIR: override })).toEqual([record]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(override, { recursive: true, force: true });
+  }
+});

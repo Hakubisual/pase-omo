@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import type { ProviderEvent } from "@getpaseo/plugin/server/provider";
 
+import { taskStateDir } from "../task-state";
+
 /**
  * `task()` runs, surfaced as the child sessions Paseo already knows how to draw.
  *
@@ -155,15 +157,21 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
   return { events, state };
 }
 
-export function tasksDirectory(cwd: string): string {
-  return join(cwd, ...TASKS_DIR_SEGMENTS);
+/** Same tree as the background-work readers: `PASEO_OMO_TASK_STATE_DIR` applies here too. */
+export function tasksDirectory(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(taskStateDir(cwd, env), "tasks");
 }
 
 /** Reads the task records this OmO session spawned. Missing directory = none. */
-export async function readTaskRecords(cwd: string, omoSessionId: string): Promise<TaskRecord[]> {
+export async function readTaskRecords(
+  cwd: string,
+  omoSessionId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<TaskRecord[]> {
+  const dir = tasksDirectory(cwd, env);
   let names: string[];
   try {
-    names = await readdir(tasksDirectory(cwd));
+    names = await readdir(dir);
   } catch {
     return [];
   }
@@ -171,7 +179,7 @@ export async function readTaskRecords(cwd: string, omoSessionId: string): Promis
   for (const name of names) {
     if (!name.startsWith("st_") || !name.endsWith(".json")) continue;
     try {
-      const parsed: unknown = JSON.parse(await readFile(join(tasksDirectory(cwd), name), "utf8"));
+      const parsed: unknown = JSON.parse(await readFile(join(dir, name), "utf8"));
       if (typeof parsed !== "object" || parsed === null) continue;
       const record = parsed as TaskRecord;
       if (typeof record.task_id !== "string" || record.task_id.length === 0) continue;
