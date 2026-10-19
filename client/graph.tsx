@@ -348,7 +348,7 @@ function NodeInspector({
           </Text>
           <Text style={styles.inspectorSub} numberOfLines={1} ellipsizeMode="tail">
             {nodeId}
-            {attempt > 0 ? ` · attempt ${attempt + 1}` : ""}
+            {attempt > 0 ? ` · attempt ${attempt}` : ""}
           </Text>
         </View>
         <Pressable

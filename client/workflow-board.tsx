@@ -323,7 +323,7 @@ export function WorkflowBoard({
           </View>
           <Text style={[styles.inspectorLine, { color: stateColor(selected.state, theme) }]}>
             {statusLabel(selected.state)}
-            {selected.attempt > 0 ? ` · attempt ${selected.attempt + 1}` : ""}
+            {selected.attempt > 0 ? ` · attempt ${selected.attempt}` : ""}
             {selectedTask?.turns !== undefined ? ` · ${selectedTask.turns} turns` : ""}
             {selectedTask?.toolCalls !== undefined ? ` · ${selectedTask.toolCalls} tool calls` : ""}
           </Text>

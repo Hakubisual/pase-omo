@@ -1752,7 +1752,7 @@ export function DagRunCard({
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    {selectedNode.id} {selectedNode.attempt > 0 ? `· attempt ${selectedNode.attempt + 1}` : ""}
+                    {selectedNode.id} {selectedNode.attempt > 0 ? `· attempt ${selectedNode.attempt}` : ""}
                   </Text>
                 </View>
                 <Pressable
