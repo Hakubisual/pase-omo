@@ -2,10 +2,10 @@ import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Text, View } from "react-native";
 import { activeRunsRpc } from "../shared/row";
 import { DagGraph } from "./graph";
-import { POPOVER_BOTTOM_INSET, popoverMaxHeight } from "./popover-layout";
+import { POPOVER_BOTTOM_INSET } from "./popover-layout";
 
 /** Live refresh cadence while the sheet is open. */
 const REFRESH_MS = 1500;
@@ -22,24 +22,24 @@ export function DagPillPopover(props: PluginButtonContentProps) {
     queryFn: () => fetchRuns({ agentId: agentId as string }),
   });
 
-  const { height: windowHeight } = useWindowDimensions();
   const styles = useMemo(
     () => ({
       screen: {
         padding: layout.compact ? 12 : 16,
         paddingBottom: (layout.compact ? 12 : 16) + POPOVER_BOTTOM_INSET,
         gap: 10,
-        maxHeight: popoverMaxHeight(layout.compact, windowHeight),
       },
       empty: { color: theme.colors.foregroundMuted, fontSize: 13 },
     }),
-    [theme, layout.compact, windowHeight],
+    [theme, layout.compact],
   );
 
   const rows = query.data?.rows ?? [];
 
   return (
-    <ScrollView style={{ maxHeight: styles.screen.maxHeight }} contentContainerStyle={styles.screen}>
+    // Paseo's popover body already owns vertical scrolling (and native sheet
+    // gestures). Keep this content unbounded so expanded details can reach it.
+    <View style={styles.screen}>
       {rows.length === 0 ? (
         <Text style={styles.empty}>
           {query.isPending ? "Loading DAG runs…" : "No DAG runs in the last 6 hours."}
@@ -60,6 +60,6 @@ export function DagPillPopover(props: PluginButtonContentProps) {
             </View>
           ))
       )}
-    </ScrollView>
+    </View>
   );
 }
