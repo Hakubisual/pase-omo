@@ -332,6 +332,15 @@ export function WorkflowBoard({
               {[selectedTask.agent, selectedTask.model].filter(Boolean).join(" · ")}
             </Text>
           ) : null}
+          {selectedTask?.modelRef ? (
+            <Text style={[styles.inspectorLine, { color: theme.colors.foregroundMuted }]}>{`Model ID: ${selectedTask.modelRef}`}</Text>
+          ) : null}
+          {selectedTask?.requestedModel ? (
+            <Text style={[styles.inspectorLine, { color: theme.colors.foregroundMuted }]}>{`Requested model: ${selectedTask.requestedModel}`}</Text>
+          ) : null}
+          {selectedTask?.resolvedModel ? (
+            <Text style={[styles.inspectorLine, { color: theme.colors.foregroundMuted }]}>{`Initial route: ${selectedTask.resolvedModel}`}</Text>
+          ) : null}
           {selectedTask?.description ? (
             <Text style={[styles.inspectorLine, { color: theme.colors.foreground }]}>{selectedTask.description}</Text>
           ) : null}

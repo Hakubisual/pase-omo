@@ -1819,6 +1819,9 @@ export function DagRunCard({
                     <Text style={[styles.detailValue, { color: theme.colors.foreground }]}>
                       {selectedTask.model}
                     </Text>
+                    {selectedTask.modelRef ? <Text style={[styles.detailValue, { color: theme.colors.foregroundMuted }]}>{`Model ID: ${selectedTask.modelRef}`}</Text> : null}
+                    {selectedTask.requestedModel ? <Text style={[styles.detailValue, { color: theme.colors.foregroundMuted }]}>{`Requested model: ${selectedTask.requestedModel}`}</Text> : null}
+                    {selectedTask.resolvedModel ? <Text style={[styles.detailValue, { color: theme.colors.foregroundMuted }]}>{`Initial route: ${selectedTask.resolvedModel}`}</Text> : null}
                   </View>
                 ) : null}
 

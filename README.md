@@ -117,6 +117,10 @@ graph, where there is room for it.
 | **OmO update** | Pause every OmO session, update OmO, and resume them where they were |
 | **Harness wrap** | OmO's harness XML, memory notes and error envelopes folded into compact bars |
 
+DAG cards use short model names; node details retain the effective provider/model
+ID and, when different, the original request and initial route. A route change
+alone does not identify its cause.
+
 ---
 
 ## Requirements

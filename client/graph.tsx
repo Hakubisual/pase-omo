@@ -382,6 +382,9 @@ function NodeInspector({
         {wave >= 0 ? <DetailField label="Wave" value={`stage ${wave + 1}`} styles={styles} /> : null}
         {task?.agent ? <DetailField label="Agent" value={task.agent} styles={styles} /> : null}
         {task?.model ? <DetailField label="Model" value={task.model} styles={styles} /> : null}
+        {task?.modelRef ? <DetailField label="Model ID" value={task.modelRef} styles={styles} wide /> : null}
+        {task?.requestedModel ? <DetailField label="Requested model" value={task.requestedModel} styles={styles} wide /> : null}
+        {task?.resolvedModel ? <DetailField label="Initial route" value={task.resolvedModel} styles={styles} wide /> : null}
         {task?.turns !== undefined ? (
           <DetailField label="Turns" value={`${task.turns} turns`} styles={styles} />
         ) : null}
