@@ -66,6 +66,30 @@ progress line, newest first. Tap a line to jump to its node.
 
 The previous card view is still one click away under **Cards**.
 
+### Inspecting workers and waits
+
+When a native task resumes under a new run epoch, its existing subagent row
+becomes running again, including after it was archived as finished. Later turns
+keep distinct result IDs; reconnecting does not duplicate recorded output. This
+reflects native task state without resuming work or changing DAG scheduling.
+
+Select a node to see its owning worker and explicit nested workers, with **Open
+worker output** for a read-only excerpt of recorded assistant text and tool
+results. The viewer stays inside the DAG; it does not start, attach to or prompt
+a worker. Large transcripts are bounded and labelled as excerpts. Missing and
+partial output are shown explicitly. Standalone session work is labelled
+separately from work belonging to a DAG node.
+
+Waiting nodes name their unfinished dependencies; tap a dependency to inspect
+it. A scheduled node without a recorded queue reason says so, rather than
+inventing a capacity limit. Waves are dependency groupings, not execution
+barriers: a ready node can start while an unrelated sibling is still running.
+
+Activity age uses recorded log activity, and a progress line uses only its own
+recorded timestamp. Undated progress says **Time not recorded**. Quiet workers
+are labelled by their silence, never automatically declared stalled or failed.
+The output view makes one final read on completion, then stops polling.
+
 ## In the chat
 
 OmO's questions arrive as Paseo's native question card:
@@ -173,6 +197,26 @@ the daemon pick up the new code.
 > runs with the daemon user's access, and client code runs inside the Paseo app.
 
 ---
+
+## Recorded node details and monitoring
+
+Selecting a node opens the same inspector in the board, cards and chat graph.
+Worker output preserves assistant/tool boundaries: assistant text has basic
+headings, lists, bold/inline code and fenced code; tool results are collapsed
+by default and expand as literal monospace logs/code. Explicit call IDs pair
+results, with partial/error/missing-call states labelled. No HTML rendering,
+image fetching, prompts, hidden context, reasoning or tool arguments are added.
+Execution, routing, activity, dependencies, bounded result previews, recorded
+model attempts/diagnostics and explicitly linked workers are grouped separately.
+Observed effective models are distinguished from planned or spawn-resolved routes;
+reasoning is displayed only when recorded. Attachment counts and execution
+attempts are separate native counters, not an inferred count of user retries.
+Missing timestamps, results and per-attempt timelines remain explicitly unknown.
+
+The board and cards show done/running/waiting/paused/failed/cancelled/skipped
+counts separately. **Focus running** and **Selected + dependencies** dim unrelated
+nodes without hiding them or changing graph positions. **Show all** clears focus.
+Focus is presentation only: it never starts, resumes, stops or retries work.
 
 ## Development
 

@@ -3,7 +3,7 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 
 import { activeRuns } from "./server/chat/active.js";
 import { agentDagSnapshot, createPublisher } from "./server/chat/publisher.js";
-import { getSnapshot, listSessions, locateDag } from "./server/dag/dag.js";
+import { getSnapshot, listSessions, locateDag, workerOutput } from "./server/dag/dag.js";
 import { listProjects } from "./server/dag/projects.js";
 import { registerApprovalHandlers } from "./server/provider/approval.js";
 import { omoSessionRegistry } from "./server/provider/session-registry.js";
@@ -11,7 +11,7 @@ import { publishTodoCard } from "./server/provider/todo-card.js";
 import { createOmoProvider } from "./server/provider/provider.js";
 import { registerUpdateHandlers } from "./server/provider/update.js";
 import { registerWorkerHandlers } from "./server/workers/workers.js";
-import { getSnapshotRpc, listProjectsRpc, listSessionsRpc } from "./shared/dag.js";
+import { getSnapshotRpc, listProjectsRpc, listSessionsRpc, workerOutputRpc } from "./shared/dag.js";
 import { locateDagRpc } from "./shared/navigate.js";
 import { activeRunsRpc, agentDagSnapshotRpc } from "./shared/row.js";
 
@@ -53,6 +53,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
 
   server.handle(listSessionsRpc, listSessions);
   server.handle(getSnapshotRpc, getSnapshot);
+  server.handle(workerOutputRpc, workerOutput);
   server.handle(activeRunsRpc, activeRuns);
   // The agent-side DAG panel asks for its own session's snapshot by agent id,
   // which is what keeps it from listing every session in the project.

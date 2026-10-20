@@ -320,7 +320,7 @@ export function relativeTime(at: number, now: number): string {
 
 export interface ActivityEntry {
   key: string;
-  at: number;
+  at: number | null;
   nodeId: string;
   state: string | null;
   text: string;
@@ -347,8 +347,15 @@ export function workflowActivity(
       }
     }
     if (node.state === "running" && task?.progress) {
-      entries.push({ key: `${node.id}:progress`, at: now, nodeId: node.id, state: null, text: `${node.label} — ${task.progress}` });
+      const progressAt = task.progressAt ? Date.parse(task.progressAt) : Number.NaN;
+      entries.push({ key: `${node.id}:progress`, at: Number.isFinite(progressAt) && progressAt <= now ? progressAt : null,
+        nodeId: node.id, state: null, text: `${node.label} — ${task.progress}` });
+    }
+    if (node.state === "running" && task?.lastActivityAt) {
+      const at = Date.parse(task.lastActivityAt);
+      if (Number.isFinite(at) && at <= now) entries.push({ key: `${node.id}:activity`, at, nodeId: node.id, state: null,
+        text: `${node.label} — recorded worker activity${task.lastTool ? ` · last observed tool: ${task.lastTool}` : ""}` });
     }
   }
-  return entries.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key)).slice(0, limit);
+  return entries.sort((a, b) => (b.at ?? -1) - (a.at ?? -1) || a.key.localeCompare(b.key)).slice(0, limit);
 }

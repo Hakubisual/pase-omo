@@ -4,10 +4,18 @@ import {
   listSessionsRpc,
   type DagSessionsPayload,
   type DagSnapshotPayload,
+  workerOutputRpc,
 } from "../../shared/dag.js";
 import { locateDagRpc, type LocateDagPayload } from "../../shared/navigate.js";
 import { resolveAgent } from "../chat/runs.js";
 import { getDagSnapshot, listDagSessions, locateDagDestination } from "./dag-store.js";
+import { readWorkerOutput } from "./worker-output.js";
+
+export async function workerOutput(input: RpcInput<typeof workerOutputRpc>) {
+  const origin = input.agentId ? await resolveAgent(input.agentId) : input;
+  if (!origin.cwd || !origin.sessionId) throw new Error("No recorded OmO session owns this worker view");
+  return readWorkerOutput({ cwd: origin.cwd, sessionId: origin.sessionId, taskId: input.taskId });
+}
 
 export async function listSessions(input: RpcInput<typeof listSessionsRpc>): Promise<DagSessionsPayload> {
   return { sessions: await listDagSessions({ cwd: input.cwd }) };

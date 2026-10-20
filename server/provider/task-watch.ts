@@ -30,6 +30,8 @@ export interface TaskRecord {
   description?: string;
   category?: string;
   model?: string;
+  /** Native run boundary; fallback/reattach epochs within a run are not new turns. */
+  run_start_epoch?: number;
   started_at?: string;
   terminal_at?: string;
 }
@@ -39,6 +41,9 @@ export interface TaskState {
   status: string;
   opened: boolean;
   closed: boolean;
+  epoch?: number;
+  /** Only used for older records without native run boundaries. */
+  legacyRevival?: number;
 }
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
@@ -54,6 +59,19 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
 export function isTerminalTask(record: TaskRecord): boolean {
   if (typeof record.terminal_at === "string" && record.terminal_at.length > 0) return true;
   return TERMINAL_STATUSES.has((record.status ?? "").toLowerCase());
+}
+
+function taskRunEpoch(record: TaskRecord): number | undefined {
+  const epoch = record.run_start_epoch;
+  return typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : undefined;
+}
+
+/** A native revive changes run_start_epoch; fallback/reattach alone does not. */
+export function taskHasResumed(record: TaskRecord, previous: TaskState | undefined): boolean {
+  if (!previous) return false;
+  const epoch = taskRunEpoch(record);
+  return epoch !== undefined ? epoch > (previous.epoch ?? 0)
+    : previous.epoch === undefined && previous.closed && !isTerminalTask(record);
 }
 
 function failed(record: TaskRecord): boolean {
@@ -98,18 +116,34 @@ export interface ChildEventResult {
  * was watching is exactly the one worth keeping.
  */
 export function taskChildEvents({ record, parentSessionId, cwd, previous }: ChildEventInput): ChildEventResult {
+  const epoch = taskRunEpoch(record);
+  // Ignore a stale snapshot instead of settling a newer resumed turn with it.
+  if (epoch !== undefined && previous?.epoch !== undefined && epoch < previous.epoch) {
+    return { events: [], state: previous };
+  }
+  const legacyRevival = previous?.closed === true && !isTerminalTask(record)
+    && epoch === undefined && previous.epoch === undefined;
+  const reopen = taskHasResumed(record, previous);
+  const revival = (previous?.legacyRevival ?? 0) + (legacyRevival ? 1 : 0);
+  const suffix = epoch !== undefined && epoch > 0 ? `-${epoch}` : revival > 0 ? `-legacy-${revival}` : "";
   const status = (record.status ?? "running").toLowerCase();
   const sessionId = record.task_id;
   const events: ProviderEvent[] = [];
   const state: TaskState = {
     status,
     opened: previous?.opened ?? false,
-    closed: previous?.closed ?? false,
+    closed: reopen ? false : previous?.closed ?? false,
+    ...(epoch === undefined ? {} : { epoch }),
+    ...(revival > 0 ? { legacyRevival: revival } : {}),
   };
 
+  // Reannounce the child on each new run. Paseo uses session.opened to publish
+  // a running upsert, which also makes a previously archived row visible again.
   if (state.closed) return { events, state };
-
-  if (!state.opened) {
+  // A whole settlement/revival can occur between scans. Release the old host
+  // projection before reusing the same child ID; this does not stop native work.
+  if (reopen && previous?.opened && !previous.closed) events.push({ type: "session.closed", sessionId });
+  if (!state.opened || reopen) {
     events.push({
       type: "session.opened",
       sessionId,
@@ -120,33 +154,30 @@ export function taskChildEvents({ record, parentSessionId, cwd, previous }: Chil
       description: taskSummaryLine(record),
       cwd,
     });
-    events.push({
+    if (!state.opened) events.push({
       type: "timeline.item",
       sessionId,
       item: { type: "assistant_message", id: `${sessionId}-summary`, text: taskSummaryLine(record) },
     });
-    events.push({ type: "session.turn", sessionId, turnId: `${sessionId}-run`, state: "started" });
+    events.push({ type: "session.turn", sessionId, turnId: `${sessionId}-run${suffix}`, state: "started" });
     state.opened = true;
-  } else if (previous !== undefined && previous.status === status) {
-    // Nothing moved, so nothing is said: every event here is another row.
-    return { events, state };
   }
 
-  if (!isTerminalTask(record)) return { events, state };
+  if (state.closed || !isTerminalTask(record)) return { events, state };
 
   events.push({
     type: "timeline.item",
     sessionId,
     item: {
       type: "assistant_message",
-      id: `${sessionId}-result`,
+      id: `${sessionId}-result${suffix}`,
       text: failed(record) ? `Task failed (${status})` : `Task ${status}`,
     },
   });
   events.push({
     type: "session.turn",
     sessionId,
-    turnId: `${sessionId}-run`,
+    turnId: `${sessionId}-run${suffix}`,
     state: failed(record) ? "failed" : "completed",
     ...(failed(record) ? { error: { message: `Task ${status}` } } : {}),
   });

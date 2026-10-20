@@ -1,7 +1,12 @@
+import { NodeInspectorContent } from "./node-inspector.js";
+import { WorkflowMonitor, focusedNodes, type FocusMode } from "./workflow-monitor.js";
 import type { PluginTheme } from "@getpaseo/plugin";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
-import type { DagRun, DagTask } from "../shared/dag.js";
+import type { DagRun, DagTask, WorkerScope } from "../shared/dag.js";
+import { dependencyExplanation } from "./node-dependencies.js";
+import { WorkerInspector, workerGroup } from "./worker-inspector.js";
+import { activityAge } from "./task-diagnostics";
 import { stateColor, statusLabel } from "./graph-visual.js";
 import {
   COMPACT_WORKFLOW_METRICS,
@@ -24,6 +29,7 @@ export interface WorkflowBoardProps {
   subtasks: DagTask[];
   theme: PluginTheme;
   compact: boolean;
+  workerScope?: WorkerScope | undefined;
 }
 
 const EDGE_THICKNESS = 1.5;
@@ -87,7 +93,11 @@ export function WorkflowBoard({
   subtasks,
   theme,
   compact,
+  workerScope,
 }: WorkflowBoardProps): React.JSX.Element {
+  const [focus, setFocus] = useState<{ run: string; mode: FocusMode }>({ run: run.id, mode: "all" });
+  const mode = focus.run === run.id ? focus.mode : "all";
+  const visible = focusedNodes(run, mode, selectedNodeId);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [activityOpen, setActivityOpen] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -157,13 +167,14 @@ export function WorkflowBoard({
             ]}
           >
             <Text style={[styles.drawerToggleText, { color: theme.colors.foreground }]}>
-              Subtasks {subtasks.length}
+              Nested workers / other session work {subtasks.length}
               {runningSubtasks > 0 ? ` · ${runningSubtasks}` : ""} {drawerOpen ? "▸" : "◂"}
             </Text>
           </Pressable>
         ) : null}
       </View>
 
+      <WorkflowMonitor run={run} selected={selectedNodeId} mode={mode} onChange={mode => setFocus({ run: run.id, mode })} theme={theme} />
       <View style={[styles.body, compact && styles.bodyCompact]}>
       <View style={styles.main}>
       <View onLayout={handleLayout}>
@@ -196,7 +207,7 @@ export function WorkflowBoard({
                         width: piece.length + 0.6,
                         height: EDGE_THICKNESS,
                         backgroundColor: edgeColor(edge.tone, theme),
-                        opacity: edge.tone === "active" ? 0.35 : 1,
+                        opacity: !visible.has(edge.from) || !visible.has(edge.to) ? 0.15 : edge.tone === "active" ? 0.35 : 1,
                         transform: [{ rotate: `${piece.angle}rad` }],
                       },
                     ]}
@@ -205,7 +216,7 @@ export function WorkflowBoard({
             )}
 
             {layout.edges.map((edge) =>
-              edge.tone === "active" ? (
+              edge.tone === "active" && visible.has(edge.from) && visible.has(edge.to) ? (
                 <FlowDots
                   key={`flow-${edge.from}-${edge.to}`}
                   path={edge.path}
@@ -228,13 +239,13 @@ export function WorkflowBoard({
               ]
                 .filter(Boolean)
                 .join(" · ");
-              const routeLine = [task?.agent, task?.model].filter(Boolean).join(" · ");
+              const routeLine = [task?.agent ?? node.route, task?.model].filter(Boolean).join(" · ");
               const detailLine =
                 node.state === "failed" && node.error
                   ? node.error
                   : node.state === "running"
-                    ? (task?.progress ?? task?.description)
-                    : task?.description;
+                    ? activityAge(task, now)
+                    : dependencyExplanation(run, node) ?? task?.description;
               const quiet = node.state === "pending" || node.state === "blocked" || node.state === "scheduled";
               return (
                 <Pressable
@@ -257,7 +268,7 @@ export function WorkflowBoard({
                           ? `${theme.colors.accent}99`
                           : theme.colors.border,
                       borderWidth: isSelected ? 2 : 1,
-                      opacity: pressed ? 0.85 : 1,
+                      opacity: !visible.has(node.id) ? 0.3 : pressed ? 0.85 : 1,
                     },
                   ]}
                 >
@@ -321,26 +332,8 @@ export function WorkflowBoard({
               <Text style={{ color: theme.colors.foregroundMuted }}>Close</Text>
             </Pressable>
           </View>
-          <Text style={[styles.inspectorLine, { color: stateColor(selected.state, theme) }]}>
-            {statusLabel(selected.state)}
-            {selected.attempt > 0 ? ` · attempt ${selected.attempt + 1}` : ""}
-            {selectedTask?.turns !== undefined ? ` · ${selectedTask.turns} turns` : ""}
-            {selectedTask?.toolCalls !== undefined ? ` · ${selectedTask.toolCalls} tool calls` : ""}
-          </Text>
-          {selectedTask?.agent || selectedTask?.model ? (
-            <Text style={[styles.inspectorLine, { color: theme.colors.foregroundMuted }]}>
-              {[selectedTask.agent, selectedTask.model].filter(Boolean).join(" · ")}
-            </Text>
-          ) : null}
-          {selectedTask?.description ? (
-            <Text style={[styles.inspectorLine, { color: theme.colors.foreground }]}>{selectedTask.description}</Text>
-          ) : null}
-          {selectedTask?.progress && selectedTask.progress !== selectedTask.description ? (
-            <Text style={[styles.inspectorLine, { color: theme.colors.accent }]}>{selectedTask.progress}</Text>
-          ) : null}
-          {selected.error ? (
-            <Text style={[styles.inspectorLine, { color: theme.colors.statusDanger }]}>{selected.error}</Text>
-          ) : null}
+          <NodeInspectorContent run={run} node={selected} task={selectedTask} tasks={[...tasksMap.values()]}
+            scope={workerScope} theme={theme} onSelectNode={onSelectNode} />
         </View>
       ) : null}
 
@@ -381,7 +374,7 @@ export function WorkflowBoard({
                     {entry.state === null || entry.state === "running" ? "" : ` — ${statusLabel(entry.state)}`}
                   </Text>
                   <Text style={[styles.activityTime, { color: theme.colors.foregroundMuted }]}>
-                    {relativeTime(entry.at, now)}
+                    {entry.at === null ? "Time not recorded" : relativeTime(entry.at, now)}
                   </Text>
                 </Pressable>
               ))
@@ -397,17 +390,18 @@ export function WorkflowBoard({
           ]}
         >
           <Text style={[styles.drawerTitle, { color: theme.colors.foregroundMuted }]}>
-            Subtasks {subtasks.length}
+            Nested workers / other session work {subtasks.length}
           </Text>
           <ScrollView style={compact ? undefined : { maxHeight: Math.max(layout.height, 320) }}>
             {subtasks.map((task) => {
               const color = stateColor(task.status ?? "", theme);
               const elapsed = taskElapsed(task, now);
-              const meta = [taskLabel(task.status), elapsed === undefined ? undefined : shortDuration(elapsed), task.agent]
+              const meta = [taskLabel(task.status), elapsed === undefined ? undefined : shortDuration(elapsed), task.agent, task.model]
                 .filter(Boolean)
                 .join(" · ");
               return (
                 <View key={task.id} style={[styles.subtask, { borderColor: theme.colors.border }]}>
+                  <Text style={[styles.cardLine, { color: theme.colors.foregroundMuted }]}>{workerGroup(task, tasksMap, new Map(run.nodes.filter(n => n.taskId).map(n => [n.taskId!, n.label])))}</Text>
                   <View style={styles.cardTitleRow}>
                     <View style={[styles.dot, { backgroundColor: color }]} />
                     <Text
@@ -421,6 +415,7 @@ export function WorkflowBoard({
                   <Text style={[styles.cardLine, { color }]} numberOfLines={1} ellipsizeMode="tail">
                     {meta}
                   </Text>
+                  <WorkerInspector key={task.id} task={task} scope={workerScope} theme={theme} compact />
                   {task.status === "running" && task.progress ? (
                     <Text
                       style={[styles.cardLine, { color: theme.colors.foregroundMuted }]}
@@ -443,8 +438,8 @@ export function WorkflowBoard({
 
 const styles = StyleSheet.create({
   board: { borderWidth: 1, borderRadius: 10, overflow: "hidden", marginBottom: 12 },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, gap: 12 },
-  headerText: { flex: 1, minWidth: 0 },
+  header: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, gap: 12 },
+  headerText: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 0 },
   title: { fontSize: 15, fontWeight: "600" },
   subtitle: { fontSize: 12, marginTop: 2 },
   runState: { fontSize: 13, fontWeight: "600" },
@@ -455,7 +450,7 @@ const styles = StyleSheet.create({
   body: { flexDirection: "row" },
   bodyCompact: { flexDirection: "column" },
   main: { flex: 1, minWidth: 0 },
-  drawerToggle: { minHeight: 32, paddingHorizontal: 10, borderWidth: 1, borderRadius: 6, justifyContent: "center" },
+  drawerToggle: { maxWidth: "100%", minHeight: 32, paddingHorizontal: 10, borderWidth: 1, borderRadius: 6, justifyContent: "center" },
   drawerToggleText: { fontSize: 12, fontWeight: "600" },
   drawer: { width: DRAWER_WIDTH, borderLeftWidth: 1, paddingHorizontal: 10, paddingTop: 8 },
   drawerCompact: { borderTopWidth: 1, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 8 },

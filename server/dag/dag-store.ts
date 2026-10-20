@@ -5,6 +5,9 @@ import type { DagRun, DagSession, DagStatus, DagTask } from "../../shared/dag.js
 import type { LocateDagPayload } from "../../shared/navigate.js";
 import { readSessionHeaders, sameCwd, type SessionHeader, sessionsDir } from "../provider/omo-store.js";
 import { taskStateDir as resolveTaskStateDir } from "../task-state.js";
+import { TaskActivityReader } from "./task-activity.js";
+
+const taskActivity = new TaskActivityReader();
 
 /**
  * Error codes the DAG RPCs expose. Corrupt source data must surface as a
@@ -69,6 +72,61 @@ function object(value: unknown): Json | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined;
 }
 
+function modelRef(model: Json | undefined): string | undefined {
+  const provider = text(model?.provider, 128);
+  const id = text(model?.model_id, 128);
+  return provider && id ? `${provider}/${id}` : undefined;
+}
+
+/** Human labels on cards; exact routing identities remain in node detail. */
+function modelFields(record: Json): Partial<DagTask> {
+  const effective = object(record.effective_model);
+  const resolved = object(record.resolved_model);
+  const resolvedRef = modelRef(resolved);
+  const effectiveDisplay = text(effective?.display, 256);
+  const effectiveId = text(effective?.model_id, 128);
+  const hasEffective = Boolean(modelRef(effective) || effectiveDisplay || effectiveId);
+  // A partial effective record must not inherit a stale route's identity.
+  const ref = hasEffective
+    ? modelRef(effective) ?? (effectiveDisplay?.includes("/") ? effectiveDisplay : undefined)
+    : resolvedRef ?? text(record.model, 256);
+  const requested = modelRef(object(record.requested_model));
+  const friendly = (value: unknown) => {
+    const display = text(value, 256);
+    return display && !display.includes("/") ? display : undefined;
+  };
+  const display = hasEffective
+    ? friendly(effectiveDisplay) ?? (ref && ref === resolvedRef ? friendly(resolved?.display) : undefined)
+    : friendly(resolved?.display);
+  const id = (ref ?? (hasEffective ? effectiveId ?? effectiveDisplay : text(resolved?.display, 256)))?.split("/").at(-1);
+  const label = display ?? (id?.startsWith("gpt-")
+    ? id.replace(/^gpt-(\d+(?:\.\d+)?)/, "GPT-$1").replace(/-(?=[a-z])/g, " ").replace(/\b[a-z]/g, c => c.toUpperCase())
+    : id);
+  // Never inherit reasoning from a different model's stale resolution. A live
+  // model-change record without reasoning leaves it unknown, even on the same ID.
+  const route = hasEffective ? effective : resolved;
+  const reasoningOf = (model: Json | undefined) => text(model?.reasoning, 64) ?? text(model?.reasoning_effort, 64) ?? text(model?.variant, 64);
+  const liveChange = Boolean(effective?.change || effective?.switched_by_operator || ["set", "cycle", "restore", "fallback", "fallback-revert"].includes(String(effective?.source)));
+  const spawnCompatible = hasEffective && !liveChange && ref && ref === resolvedRef;
+  const reasoning = reasoningOf(route) ?? (spawnCompatible ? reasoningOf(resolved) : undefined);
+  const variant = text(route?.variant, 64) ?? (spawnCompatible ? text(resolved?.variant, 64) : undefined);
+  const attempts = Array.isArray(record.fallback_attempts) ? record.fallback_attempts : [];
+  const modelAttempts = attempts.slice(-20).flatMap(raw => {
+    const attempt = object(raw); const model = modelRef(attempt) ?? text(attempt?.display, 256);
+    return model ? [{ model, ...pick("reasoning", reasoningOf(attempt)), ...pick("variant", text(attempt?.variant, 64)) }] : [];
+  });
+  return {
+    ...pick("model", label),
+    ...pick("reasoning", reasoning),
+    ...pick("modelStage", ref || label ? hasEffective ? "effective" as const : resolvedRef || text(resolved?.display, 256) ? "resolved" as const : "planned" as const : undefined),
+    ...pick("variant", variant),
+    ...(attempts.length ? { modelAttempts, modelAttemptCount: attempts.length } : {}),
+    ...pick("modelRef", ref),
+    ...pick("requestedModel", requested && requested !== ref ? requested : undefined),
+    ...pick("resolvedModel", resolvedRef && resolvedRef !== ref ? resolvedRef : undefined),
+  };
+}
+
 /**
  * Project one OmO subagent task record onto the DAG task shape.
  *
@@ -89,14 +147,16 @@ export function normalizeTask(raw: unknown): DagTask | undefined {
     id: record.task_id,
     ...pick("description", text(record.description) ?? text(record.task_summary) ?? text(record.name)),
     ...pick("agent", text(record.agent_type, 128) ?? text(record.category, 128)),
-    ...pick("model", text(object(record.resolved_model)?.display, 256) ?? text(record.model, 256)),
+    ...modelFields(record),
     ...pick("status", status),
-    ...pick("startedAt", iso(live?.started_at) ?? iso(record.created_at)),
+    ...pick("startedAt", iso(live?.started_at) ?? iso(record.started_at) ?? iso(record.created_at)),
     ...pick("completedAt", iso(record.terminal_at) ?? (terminal ? iso(record.updated_at) : undefined)),
     ...pick("progress", terminal ? undefined : (text(progress, 512) ?? text(live?.activity, 512))),
+    ...pick("progressAt", terminal ? undefined : iso(live?.updated_at ?? live?.last_activity_at)),
     ...pick("turns", count(live?.turns) ?? count(stats?.turns)),
     ...pick("toolCalls", count(live?.tool_calls) ?? count(stats?.tool_calls)),
     ...pick("tokensPerSecond", rate(stats?.tokens_per_second)),
+    ...pick("terminalReason", terminal ? text(record.error_message, 2000) : undefined),
   };
   return task;
 }
@@ -126,13 +186,29 @@ export function normalizeRun(raw: unknown): DagRun | undefined {
     if (typeof state !== "string" || !STATUSES.has(state as DagStatus)) return undefined;
     ids.add(node.id);
     const taskId = node.task_id ?? node.taskId;
+    const route = object(node.route);
+    const diagnostics = Array.isArray(record.diagnostics) ? record.diagnostics.filter(raw => object(raw)?.nodeId === node.id) : [];
+    const output = typeof node.output === "string" ? clean(node.output) : undefined;
+    const outputBytes = count(node.outputBytes ?? node.output_bytes);
     nodes.push({
       id: node.id,
       label: clean(node.label ?? node.id),
       state: state as DagStatus,
       attempt: count(node.attempt) ?? 0,
+      ...pick("execAttempt", count(node.execAttempt ?? node.exec_attempt)),
       ...(typeof taskId === "string" ? { taskId } : {}),
       error: clean(object(node.last_error)?.message ?? object(node.error)?.message ?? ""),
+      ...pick("route", text(route?.category ?? route?.agent, 128)),
+      ...(route?.kind === "category" || route?.kind === "agent" ? { routeKind: route.kind } : {}),
+      ...pick("requestedModel", text(route?.model, 256)),
+      ...pick("startedAt", iso(node.startedAt ?? node.started_at)),
+      ...pick("completedAt", iso(node.completedAt ?? node.completed_at)),
+      ...(output === undefined ? {} : { outputPreview: output.slice(0, 2000), outputTruncated: output.length > 2000 || (outputBytes !== undefined && outputBytes > Buffer.byteLength(String(node.output), "utf8")) }),
+      ...pick("outputBytes", outputBytes),
+      ...(diagnostics.length ? { diagnostics: diagnostics.slice(-20).flatMap(raw => {
+        const d = object(raw); const message = text(d?.message, 1000);
+        return message ? [{ kind: text(d?.kind, 64) ?? "diagnostic", message, ...pick("at", iso(d?.at)) }] : [];
+      }), diagnosticCount: diagnostics.length } : {}),
     });
   }
 
@@ -426,7 +502,15 @@ export async function getDagSnapshot(
   if (!selected || !sameCwd(selected.cwd, resolved.cwd)) {
     throw sessionNotFound();
   }
-  return { sessionId: selected.id, ...project(catalog, selected.id) };
+  const snapshot = project(catalog, selected.id);
+  for (const task of snapshot.tasks) {
+    if (task.status !== "running") continue;
+    const activity = await taskActivity.read(resolved.taskStateDir, task.id);
+    if (!activity) continue;
+    Object.assign(task, activity);
+    if (!task.progress && activity.lastTool) task.progress = `Last tool: ${activity.lastTool}`;
+  }
+  return { sessionId: selected.id, ...snapshot };
 }
 
 /**

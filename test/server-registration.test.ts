@@ -35,6 +35,7 @@ describe("unified server registrations", () => {
       "dag.projects",
       "dag.sessions",
       "dag.snapshot",
+      "dag.worker-output",
       // Pausing every OmO session, replacing the CLI and resuming them is one
       // daemon-side action because only the daemon holds the live sessions.
       "update.apply",

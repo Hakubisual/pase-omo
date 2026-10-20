@@ -118,7 +118,7 @@ test("subtasks collect every depth under the run's nodes, then run-less tasks, r
 test("activity lists starts, ends, errors and live progress newest first", () => {
   const tasks = new Map<string, DagTask>([
     ["st_plan", { id: "st_plan", startedAt: "2026-09-29T00:00:00.000Z", completedAt: "2026-09-29T00:01:00.000Z" }],
-    ["st_b", { id: "st_b", startedAt: "2026-09-29T00:02:00.000Z", progress: "checking every claim" }],
+    ["st_b", { id: "st_b", startedAt: "2026-09-29T00:02:00.000Z", progress: "checking every claim", progressAt: "2026-09-29T00:04:00.000Z" }],
   ]);
   const failed = { ...node("plan", "failed", "st_plan"), error: "boom" };
   const now = Date.parse("2026-09-29T00:05:00.000Z");
